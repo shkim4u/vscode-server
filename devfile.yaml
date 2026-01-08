@@ -1,0 +1,195 @@
+schemaVersion: 2.0.0
+metadata:
+  name: aws-universal-python
+  version: 1.0.1
+  displayName: AWS Universal Python Dev Environment
+  description: AWS Universal Stack + Python 3.12 via pyenv, Jupyter, and VSCode integration
+  tags: ["aws", "python", "pyenv", "jupyter"]
+  projectType: "aws"
+
+components:
+  - name: aws-runtime
+    container:
+      image: public.ecr.aws/aws-mde/universal-image:latest
+      mountSources: true
+      volumeMounts:
+        - name: docker-store
+          path: /var/lib/docker
+      # VS Code Server 안정성을 위한 환경 변수
+      env:
+        # - name: VSCODE_SERVER_STARTUP_TIMEOUT
+        #   value: "60000"
+        # - name: VSCODE_AGENT_FOLDER
+        #   value: "/home/mde-user/.vscode-server"
+        # 자동 종료 비활성화를 위한 설정
+        - name: VSCODE_SERVER_DISABLE_AUTO_SHUTDOWN
+          value: "true"
+        - name: VSCODE_EXTENSIONS_AUTOCHECK_DISABLED
+          value: "true"
+        - name: NODE_OPTIONS
+          value: "--max-old-space-size=8192"
+  - name: docker-store
+    volume:
+      size: 16Gi
+
+commands:
+  - id: setup-environment
+    exec:
+      component: aws-runtime
+      commandLine: >
+        bash -c "
+          # 🚨 (주의 사항)
+          # 이 스크립트의 실행 컨텍스트는 "/home/mde-user"가 아직 아니므로 $HOME 환경 변수를 사용하면 안됩니다.
+          # Check if environment is already set up
+          if [ -f ~/.environment_setup_complete ]; then
+            echo '✅ Environment already set up. Skipping initialization...'
+            exit 0
+          fi
+        
+          cd NexusGenAIConsumerCDKAppExample
+          # Git configuration
+          git config core.quotepath false
+          git config core.precomposeunicode true
+          git config core.editor vim
+
+          # Remove old Python aliases
+          sed -i '/alias python=/d' ~/.bashrc && sed -i '/alias pip=/d' ~/.bashrc
+
+          # Update and install packages
+          sudo yum update -y
+          sudo yum install -y gcc zlib-devel bzip2 bzip2-devel patch readline-devel sqlite sqlite-devel openssl-devel tk-devel
+          sudo yum install -y mesa-libGL || true
+        
+          # Upgrade node 18 to 20
+          echo \"Installing nvm...\"
+          curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+        
+          # Add nvm to .bashrc - No need thanks to the above command.
+          #echo 'export NVM_DIR="$HOME/.nvm"' >> ~/.bashrc
+          #echo '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"' >> ~/.bashrc
+          #echo '[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"' >> ~/.bashrc
+          
+          # Source .bashrc to apply changes in current session
+          source /home/mde-user/.bashrc
+
+          #export NVM_DIR=\"/home/mde-user/.nvm\"
+          #[ -s \"$NVM_DIR/nvm.sh\" ] && \. \"$NVM_DIR/nvm.sh\"
+          #[ -s \"$NVM_DIR/bash_completion\" ] && \. \"$NVM_DIR/bash_completion\"
+
+          nvm install 20
+          nvm use 20
+
+          # 버전 확인
+          node --version
+          npm --version
+
+          # Update CDK
+          echo \"Installing NPM...\"
+          npm install -g npm
+          echo \"Installing AWS CDK...\"
+          npm uninstall -g aws-cdk || true
+          npm install -g aws-cdk
+
+          # Install pyenv
+          echo \"Installing pyenv...\"
+          rm -rf /home/mde-user/.pyenv && curl -fsSL https://pyenv.run | bash
+          ls -al ~/.pyenv
+          ./configure-bash-v2.sh
+          source ~/.bashrc
+
+          # Setup Python environment
+          #export PYENV_ROOT=/home/mde-user/.pyenv
+          echo \"PYENV_ROOT:\"
+          echo $PYENV_ROOT
+          #export PATH=\"/home/mde-user/.pyenv/bin:$PATH\"
+          echo \"PATH:\"
+          echo $PATH
+          eval \"$(pyenv init - bash)\"
+          eval \"$(pyenv init --path)\"
+          eval \"$(pyenv init -)\"
+          eval \"$(pyenv virtualenv-init -)\"
+          pyenv install 3.12.12
+          pyenv global 3.12.12
+          pyenv virtualenv 3.12.12 .venv
+          pyenv activate .venv
+          #source $(pyenv root)/versions/.venv/bin/activate 
+          pip install --upgrade pip
+          pip install ipykernel jupyterlab
+          pip install uv
+          python -m ipykernel install --user --name .venv --display-name \".venv\"
+          pyenv local .venv
+          #unalias python pip || true
+
+          # Verify installations
+          pip list
+          python --version
+          which python
+          which uv
+
+          source ~/.bashrc
+          # Amazon Q 설정
+          mkdir -p ~/.aws/amazonq
+          cp misc/mcp/amazonq/mcp-codecatalyst-init.json ~/.aws/amazonq/mcp.json
+          cd ~/
+          curl --proto '=https' --tlsv1.2 -sSf "https://desktop-release.q.us-east-1.amazonaws.com/latest/q-x86_64-linux.zip" -o "q.zip"
+          unzip q.zip
+          ./q/install.sh --no-confirm
+
+          # VS Code Server 최적화 설정
+          mkdir -p ~/.vscode-server/data/User
+          echo '{
+            \"extensions.autoUpdate\": false,
+            \"extensions.autoCheckUpdates\": false,
+            \"telemetry.telemetryLevel\": \"off\",
+            \"workbench.enableExperiments\": false,
+            \"files.watcherExclude\": {
+              \"**/.git/objects/**\": true,
+              \"**/.git/subtree-cache/**\": true,
+              \"**/node_modules/**\": true,
+              \"**/.pyenv/**\": true,
+              \"**/__pycache__/**\": true
+            }
+          }' > ~/.vscode-server/data/User/settings.json
+
+          # Create flag file to indicate setup is complete
+          touch ~/.environment_setup_complete
+          echo '✅ Python & Jupyter 설치 완료'
+        "
+      workingDir: /projects
+
+  # VS Code Server 재시작 명령어 추가
+  - id: restart-vscode-server
+    exec:
+      component: aws-runtime
+      commandLine: >
+        bash -c "
+          echo 'VS Code Server 재시작 중...'
+          pkill -f server-main.js || true
+          sleep 3
+          echo 'VS Code Server가 자동으로 재시작됩니다.'
+        "
+      workingDir: /projects
+
+  # 디스크 정리 명령어 추가
+  - id: cleanup-disk
+    exec:
+      component: aws-runtime
+      commandLine: >
+        bash -c "
+          echo '디스크 정리 시작...'
+          # VS Code 로그 정리 (7일 이상 된 것)
+          find ~/.vscode-server/data/logs -type f -mtime +7 -delete 2>/dev/null || true
+          # 임시 파일 정리
+          sudo rm -rf /tmp/* 2>/dev/null || true
+          # Docker 정리
+          docker system prune -f 2>/dev/null || true
+          docker system prune --volumes -f || true
+          # 패키지 캐시 정리
+          sudo yum clean all 2>/dev/null || true
+          echo '디스크 정리 완료'
+          df -h /projects
+        "
+
+events:
+  postStart:
+    - setup-environment
