@@ -46,7 +46,7 @@ commands:
             exit 0
           fi
         
-          cd NexusGenAIConsumerCDKAppExample
+          cd vscode-server
           # Git configuration
           git config core.quotepath false
           git config core.precomposeunicode true
@@ -76,8 +76,8 @@ commands:
           #[ -s \"$NVM_DIR/nvm.sh\" ] && \. \"$NVM_DIR/nvm.sh\"
           #[ -s \"$NVM_DIR/bash_completion\" ] && \. \"$NVM_DIR/bash_completion\"
 
-          nvm install 20
-          nvm use 20
+          nvm install 22
+          nvm use 22
 
           # 버전 확인
           node --version
