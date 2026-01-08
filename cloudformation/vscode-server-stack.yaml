@@ -469,14 +469,13 @@ Resources:
               # Clone GitHub repository if token is provided
               if [ -n "${GITHUB_TOKEN}" ]; then
                 echo "INFO: GitHub access token provided, cloning repository"
-                cd ~ubuntu
+                cd /home/ubuntu
                 sudo -u ubuntu git clone https://x-access-token:${GITHUB_TOKEN}@github.com/shkim4u/ax-on-mastery
                 echo "INFO: Repository cloned successfully"
 
                 # Configure VSCode Server environemnts, including Python 3.12, Node.js 22, Claude Code and Amazon Q
                 echo "INFO: Configuring VSCode Server environment"
-                cd ax-on-mastery
-                sudo -u ubuntu bash -c ". ./configure-vscode-server.sh"
+                sudo -i -u ubuntu bash -c "cd /home/ubuntu/ax-on-mastery && ./configure-vscode-server.sh"
                 echo "INFO: VSCode Server configuration complete"
               else
                 echo "INFO: No GitHub access token provided, skipping repository clone"
