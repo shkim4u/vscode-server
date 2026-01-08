@@ -17,7 +17,8 @@ if [ $# -ne 2 ]; then
   echo "  $0 VSCodeServerStack VSCodeServerPasswordSSM"
   echo ""
   echo "  # Remote execution with curl:"
-  echo "  curl -fsSL https://raw.githubusercontent.com/shkim4u/ax-on-mastery/main/cloudformation/get-stack-output.sh | bash -s VSCodeServerStack VSCodeServerPasswordSSM"
+  echo "  curl -fsSL https://raw.githubusercontent.com/shkim4u/vscode-server/main/cloudformation/get-stack-output.sh | bash -s VSCodeServerStack VSCodeServerCloudFrontDomainName"
+  echo "  curl -fsSL https://raw.githubusercontent.com/shkim4u/vscode-server/main/cloudformation/get-stack-output.sh | bash -s VSCodeServerStack VSCodeServerPasswordSSM"
   exit 1
 fi
 
