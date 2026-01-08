@@ -475,8 +475,11 @@ Resources:
 
                 # Configure VSCode Server environemnts, including Python 3.12, Node.js 22, Claude Code and Amazon Q
                 echo "INFO: Configuring VSCode Server environment"
-                sudo -i -u ubuntu bash -c "cd /home/ubuntu/ax-on-mastery && ./configure-vscode-server.sh"
-                echo "INFO: VSCode Server configuration complete"
+                if sudo -i -u ubuntu bash -c "cd /home/ubuntu/ax-on-mastery && ./configure-vscode-server.sh"; then
+                  echo "INFO: VSCode Server configuration completed successfully"
+                else
+                  echo "ERROR: VSCode Server configuration failed with exit code $?"
+                fi
               else
                 echo "INFO: No GitHub access token provided, skipping repository clone"
               fi
