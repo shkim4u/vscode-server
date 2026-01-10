@@ -27,7 +27,7 @@ export REMOTE_SSH_PUBLIC_KEY=$(cat ~/.ssh/vscode-remote-ssh.pub)
 3. CloudFormation 배포 명령어 (파라미터 추가)
 
 ```bash
-export GITHUB_TOKEN=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
+export GITHUB_TOKEN=<YOUR_GITHUB_PAT>
 
 export REMOTE_SSH_PUBLIC_KEY=$(cat ~/.ssh/vscode-remote-ssh.pub)
 
@@ -49,7 +49,7 @@ RemoteSSHPublicKey="$REMOTE_SSH_PUBLIC_KEY" \
 SSH Remote 기능이 필요 없다면 파라미터를 생략하거나 빈 문자열로 전달할 수 있습니다.
 
 ```bash
-export GITHUB_TOKEN=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
+export GITHUB_TOKEN=<YOUR_GITHUB_PAT>
 
 curl -sL https://raw.githubusercontent.com/shkim4u/vscode-server/main/cloudformation/vscode-server-stack.yaml -o /tmp/vscode-server-stack.yaml && \
 aws cloudformation deploy \
