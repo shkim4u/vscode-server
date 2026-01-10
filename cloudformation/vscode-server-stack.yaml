@@ -55,6 +55,10 @@ Parameters:
     Description: GitHub Personal Access Token for cloning private repositories (leave empty to skip)
     Default: ""
     NoEcho: true
+  RemoteSSHPublicKey:
+    Type: String
+    Description: SSH public key for VSCode Remote SSH (leave empty to skip)
+    Default: ""
 #------------------------------------------------------
 # VPC and Network Resources
 #------------------------------------------------------
@@ -484,9 +488,21 @@ Resources:
                 echo "INFO: No GitHub access token provided, skipping repository clone"
               fi
 
+              # Configure SSH public key for Remote SSH
+              if [ -n "${REMOTE_SSH_PUBLIC_KEY}" ]; then
+                echo "INFO: Configuring SSH public key for VSCode Remote SSH"
+                sudo -i -u ubuntu bash -c "mkdir -p ~/.ssh && chmod 700 ~/.ssh"
+                sudo -i -u ubuntu bash -c "echo '${REMOTE_SSH_PUBLIC_KEY}' >> ~/.ssh/authorized_keys"
+                sudo -i -u ubuntu bash -c "chmod 600 ~/.ssh/authorized_keys"
+                echo "INFO: SSH public key configuration complete"
+              else
+                echo "INFO: No SSH public key provided, skipping SSH configuration"
+              fi
+
               echo "INFO: UserData script execution finished"
             - VERSION: !Ref VSCodeServerVersion
               GITHUB_TOKEN: !Ref GitHubAccessToken
+              REMOTE_SSH_PUBLIC_KEY: !Ref RemoteSSHPublicKey
 #------------------------------------------------------
 # CloudFront Cached Policy
 #------------------------------------------------------
