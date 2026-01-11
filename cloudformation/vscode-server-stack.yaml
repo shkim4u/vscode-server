@@ -638,7 +638,7 @@ Resources:
               if [ "$DEPLOY_RESOURCE" = "true" ]; then
                 if [ -d "/home/ubuntu/${PROJECT_NAME}" ]; then
                   echo "INFO: Running npm build and deploy for ${PROJECT_NAME}"
-                  if sudo -i -u ubuntu bash -c "source ~/.bashrc && cd /home/ubuntu/${PROJECT_NAME} && npm ci && npm run bootstrap && npm run build && npm run deploy"; then
+                  if sudo -i -u ubuntu bash -c "source ~/.bashrc && export NVM_DIR=\"\$HOME/.nvm\" && [ -s \"\$NVM_DIR/nvm.sh\" ] && \\. \"\$NVM_DIR/nvm.sh\" && cd /home/ubuntu/${PROJECT_NAME} && npm ci && npm run bootstrap && npm run build && npm run deploy"; then
                     echo "INFO: npm build and deploy completed successfully"
                   else
                     echo "ERROR: npm build and deploy failed with exit code $?"
