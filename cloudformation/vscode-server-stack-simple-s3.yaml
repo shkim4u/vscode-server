@@ -1,0 +1,758 @@
+#------------------------------------------------------
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+#------------------------------------------------------
+AWSTemplateFormatVersion: "2010-09-09"
+Description: deploy a vscode-server on an ec2
+#------------------------------------------------------
+# Mappings CloudFront PrefixListId
+#------------------------------------------------------
+Mappings:
+  CloudFrontPrefixListIdMappings:
+    us-west-2:
+      PrefixListId: "pl-82a045eb"
+    us-east-1:
+      PrefixListId: "pl-3b927c52"
+    us-east-2:
+      PrefixListId: "pl-b6a144df"
+    ap-southeast-1:
+      PrefixListId: "pl-31a34658"
+    # (2025-11-09) KSH: 서울 리전 추가
+    ap-northeast-2:
+      PrefixListId: "pl-22a6434b"
+  RegionShortCode:
+    ap-northeast-2:
+      Code: apne2
+    us-east-1:
+      Code: use1
+    us-west-2:
+      Code: usw2
+
+#------------------------------------------------------
+# Parameters
+#------------------------------------------------------
+Parameters:
+  InstanceType:
+    Description: WebServer EC2 instance type
+    Type: String
+    # Default: t2.xlarge
+    # GPU: g5.12xlarge
+    Default: m7i.2xlarge
+    ConstraintDescription: must be a valid EC2 instance type.
+  LatestAmiId:
+    Description: latest image id for ubuntu
+    Type: "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>"
+    # Default: "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
+    # GPU: /aws/service/deeplearning/ami/x86_64/oss-nvidia-driver-gpu-pytorch-2.4-ubuntu-22.04/latest/ami-id
+    # Refer to: https://docs.aws.amazon.com/ko_kr/dlami/latest/devguide/aws-deep-learning-ami-gpu-pytorch-2.4-ubuntu-22-04.html
+    Default: "/aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp2/ami-id"
+  InternetCidrBlock:
+    Type: String
+    Description: UserCidrBlock
+    Default: 0.0.0.0/0
+  VSCodeServerVersion:
+    Type: String
+    Description: VSCodeServerVersion
+    Default: 4.107.1
+  OriginRequestPolicyId:
+    Type: String
+    Description: origin request policy id
+    Default: 216adef6-5c7f-47e4-b989-5492eafa07d3
+  GitHubAccessToken:
+    Type: String
+    Description: GitHub Personal Access Token for cloning private repositories (leave empty to skip)
+    Default: ""
+    NoEcho: true
+  RemoteSSHPublicKey:
+    Type: String
+    Description: SSH public key for VSCode Remote SSH (leave empty to skip)
+    Default: ""
+  ProjectName:
+    Type: String
+    Description: Project name to clone and deploy
+    Default: "ax-on-mastery"
+  DeployProjectResource:
+    Type: String
+    Description: Whether to deploy project resources (True/False)
+    Default: "True"
+    AllowedValues:
+      - "True"
+      - "true"
+      - "False"
+      - "false"
+#------------------------------------------------------
+# VPC and Network Resources
+#------------------------------------------------------
+Resources:
+  # VPC
+  VSCodeServerVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: VSCodeServer-VPC
+
+  # Internet Gateway
+  VSCodeServerIGW:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: VSCodeServer-IGW
+
+  VSCodeServerIGWAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VSCodeServerVPC
+      InternetGatewayId: !Ref VSCodeServerIGW
+
+  # Public Subnets
+  VSCodeServerPublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VSCodeServerVPC
+      CidrBlock: 10.0.0.0/24
+      AvailabilityZone: !Sub "${AWS::Region}a"
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: VSCodeServer-Public-Subnet-A
+
+  VSCodeServerPublicSubnetC:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VSCodeServerVPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Sub "${AWS::Region}c"
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: VSCodeServer-Public-Subnet-C
+
+  # Private Subnets
+  VSCodeServerPrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VSCodeServerVPC
+      CidrBlock: 10.0.10.0/24
+      AvailabilityZone: !Sub "${AWS::Region}a"
+      Tags:
+        - Key: Name
+          Value: VSCodeServer-Private-Subnet-A
+
+  VSCodeServerPrivateSubnetC:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VSCodeServerVPC
+      CidrBlock: 10.0.11.0/24
+      AvailabilityZone: !Sub "${AWS::Region}c"
+      Tags:
+        - Key: Name
+          Value: VSCodeServer-Private-Subnet-C
+
+  # Public Route Table
+  VSCodeServerPublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VSCodeServerVPC
+      Tags:
+        - Key: Name
+          Value: VSCodeServer-Public-RT
+
+  VSCodeServerPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VSCodeServerIGWAttachment
+    Properties:
+      RouteTableId: !Ref VSCodeServerPublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref VSCodeServerIGW
+
+  VSCodeServerPublicSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref VSCodeServerPublicSubnetA
+      RouteTableId: !Ref VSCodeServerPublicRouteTable
+
+  VSCodeServerPublicSubnetCRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref VSCodeServerPublicSubnetC
+      RouteTableId: !Ref VSCodeServerPublicRouteTable
+
+  # Private Route Table
+  VSCodeServerPrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VSCodeServerVPC
+      Tags:
+        - Key: Name
+          Value: VSCodeServer-Private-RT
+
+  VSCodeServerPrivateSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref VSCodeServerPrivateSubnetA
+      RouteTableId: !Ref VSCodeServerPrivateRouteTable
+
+  VSCodeServerPrivateSubnetCRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref VSCodeServerPrivateSubnetC
+      RouteTableId: !Ref VSCodeServerPrivateRouteTable
+
+  # S3 Gateway VPC Endpoint
+  VSCodeServerS3Endpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VSCodeServerVPC
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.s3"
+      VpcEndpointType: Gateway
+      RouteTableIds:
+        - !Ref VSCodeServerPublicRouteTable
+        - !Ref VSCodeServerPrivateRouteTable
+
+#------------------------------------------------------
+# S3 Bucket
+#------------------------------------------------------
+  SageMakerModelsS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub
+        - "${ProjectName}-sm-models-${AWS::AccountId}-${RegionCode}"
+        - ProjectName: !Ref ProjectName
+          RegionCode: !FindInMap [RegionShortCode, !Ref "AWS::Region", Code]
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      Tags:
+        - Key: Name
+          Value: SageMaker-Models-S3Bucket
+    DeletionPolicy: Delete
+
+  # Lambda Role for S3 Bucket Cleanup
+  S3BucketCleanupLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: S3BucketCleanupPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                  - s3:ListBucketVersions
+                  - s3:DeleteObject
+                  - s3:DeleteObjectVersion
+                Resource:
+                  - !GetAtt SageMakerModelsS3Bucket.Arn
+                  - !Sub '${SageMakerModelsS3Bucket.Arn}/*'
+
+  # Lambda Function for S3 Bucket Cleanup
+  S3BucketCleanupLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-S3BucketCleanup'
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt S3BucketCleanupLambdaRole.Arn
+      Timeout: 300
+      Code:
+        ZipFile: |
+          import boto3
+          import cfnresponse
+          import logging
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+          s3 = boto3.resource('s3')
+
+          def handler(event, context):
+              logger.info(f'Event: {event}')
+              bucket_name = event['ResourceProperties']['BucketName']
+
+              try:
+                  if event['RequestType'] == 'Delete':
+                      logger.info(f'Emptying bucket: {bucket_name}')
+                      bucket = s3.Bucket(bucket_name)
+
+                      # Delete all objects
+                      bucket.objects.all().delete()
+
+                      # Delete all object versions
+                      bucket.object_versions.all().delete()
+
+                      logger.info(f'Successfully emptied bucket: {bucket_name}')
+
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+              except Exception as e:
+                  logger.error(f'Error: {str(e)}')
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {'Error': str(e)})
+
+  # Custom Resource to trigger bucket cleanup on stack deletion
+  S3BucketCleanupCustomResource:
+    Type: Custom::S3BucketCleanup
+    Properties:
+      ServiceToken: !GetAtt S3BucketCleanupLambda.Arn
+      BucketName: !Ref SageMakerModelsS3Bucket
+
+#------------------------------------------------------
+# Security Group
+#------------------------------------------------------
+  VSCodeServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W40
+            reason: allow ingress from the cloudfront prefix list
+          - id: W5
+            reason: allow ingress from the cloudfront prefix list
+    Properties:
+      GroupDescription: allow ingress from cloudfront prefix list
+      VpcId: !Ref VSCodeServerVPC
+
+  VSCodeServerSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: open port 8080 for the cloudfront prefix list
+      GroupId:
+        Fn::GetAtt:
+          - VSCodeServerSecurityGroup
+          - GroupId
+      IpProtocol: tcp
+      FromPort: 8080
+      ToPort: 8080
+      SourcePrefixListId:
+        Fn::FindInMap:
+          - CloudFrontPrefixListIdMappings
+          - Ref: AWS::Region
+          - PrefixListId
+
+  VSCodeServerSecurityGroupEgress:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      Description: egress for vscode security group
+      GroupId:
+        Fn::GetAtt:
+          - VSCodeServerSecurityGroup
+          - GroupId
+      IpProtocol: -1
+      CidrIp: !Ref InternetCidrBlock
+#------------------------------------------------------
+# Role and Instance Profile
+#------------------------------------------------------
+  VSCodeServerIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AdministratorAccess
+      Policies:
+        - PolicyName: SSMParameterAccess
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssm:PutParameter
+                  - ssm:GetParameter
+                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/code-server/*"
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - Ref: VSCodeServerIAMRole
+#------------------------------------------------------
+# IAM Role for EventBridge Scheduler
+#------------------------------------------------------
+  EventBridgeSchedulerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - events.amazonaws.com
+                - ssm.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonSSMAutomationRole
+      Policies:
+        - PolicyName: EC2InstanceScheduling
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:StartInstances
+                  - ec2:StopInstances
+                  - ec2:DescribeInstances
+                  - ec2:DescribeInstanceStatus
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource: !Sub "arn:aws:iam::${AWS::AccountId}:role/*"
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: ssm.amazonaws.com
+#------------------------------------------------------
+# EventBridge Rules for Instance Scheduling (Weekdays Only)
+#------------------------------------------------------
+  VSCodeServerStartRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Start VSCode Server at 8:30 AM KST on weekdays (11:30 PM UTC previous day, Sun-Thu)
+      ScheduleExpression: "cron(30 23 ? * SUN-THU *)"
+      State: ENABLED
+      Targets:
+        - Arn: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:automation-definition/AWS-StartEC2Instance"
+          RoleArn: !GetAtt EventBridgeSchedulerRole.Arn
+          Id: StartVSCodeServerInstance
+          Input: !Sub |
+            {
+              "InstanceId": ["${VSCodeServer}"],
+              "AutomationAssumeRole": ["${EventBridgeSchedulerRole.Arn}"]
+            }
+
+  VSCodeServerStopRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Stop VSCode Server at 8:00 PM KST on weekdays (11:00 AM UTC, Mon-Fri)
+      ScheduleExpression: "cron(0 11 ? * MON-FRI *)"
+      State: ENABLED
+      Targets:
+        - Arn: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:automation-definition/AWS-StopEC2Instance"
+          RoleArn: !GetAtt EventBridgeSchedulerRole.Arn
+          Id: StopVSCodeServerInstance
+          Input: !Sub |
+            {
+              "InstanceId": ["${VSCodeServer}"],
+              "AutomationAssumeRole": ["${EventBridgeSchedulerRole.Arn}"]
+            }
+#------------------------------------------------------
+# Elastic IP for EC2 Instance
+#------------------------------------------------------
+  VSCodeServerEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: VSCodeServer-EIP
+
+  VSCodeServerEIPAssociation:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      AllocationId: !GetAtt VSCodeServerEIP.AllocationId
+      InstanceId: !Ref VSCodeServer
+#------------------------------------------------------
+# EC2 Instance for VSCode Server
+#------------------------------------------------------
+  VSCodeServer:
+    Type: AWS::EC2::Instance
+    DependsOn: SageMakerModelsS3Bucket
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W40
+            reason: allow tcp 8080 from the cloudfront prefix list
+    Properties:
+      ImageId: !Ref LatestAmiId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref InstanceProfile
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: 250
+            VolumeType: gp3
+            DeleteOnTermination: true
+            Encrypted: true
+      Tags:
+        - Key: Name
+          Value: VSCodeServer
+      NetworkInterfaces:
+        - DeviceIndex: "0"
+          AssociatePublicIpAddress: "true"
+          SubnetId: !Ref VSCodeServerPublicSubnetA
+          GroupSet:
+            - Fn::GetAtt:
+                - VSCodeServerSecurityGroup
+                - GroupId
+      Monitoring: true
+      UserData:
+        Fn::Base64:
+          Fn::Sub:
+            - |
+              #!/bin/bash
+              echo "INFO: Starting UserData script execution"
+                          
+              # Install AWS CLI and jq
+              echo "INFO: Installing AWS CLI prerequisites and jq"
+              apt-get -o DPkg::Lock::Timeout=-1 update
+              DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=-1 install -y curl unzip jq
+              echo "INFO: Prerequisites and jq installed, downloading AWS CLI"
+              curl -fsSL https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip -o /tmp/aws-cli.zip
+              echo "INFO: Extracting AWS CLI"
+              unzip -q -d /tmp /tmp/aws-cli.zip
+              echo "INFO: Installing AWS CLI"
+              sudo /tmp/aws/install
+              rm -rf /tmp/aws /tmp/aws-cli.zip
+              echo "INFO: AWS CLI installation complete"
+              aws --version
+              
+              # Install Docker
+              echo "INFO: Installing Docker"
+              DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=-1 install -y ca-certificates gnupg lsb-release
+              echo "INFO: Adding Docker GPG key"
+              install -m 0755 -d /etc/apt/keyrings
+              curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+              chmod a+r /etc/apt/keyrings/docker.gpg
+              echo "INFO: Adding Docker repository"
+              echo \
+                "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+                $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+              echo "INFO: Installing Docker packages"
+              apt-get -o DPkg::Lock::Timeout=-1 update
+              DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=-1 install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+              echo "INFO: Adding ubuntu user to docker group"
+              usermod -aG docker ubuntu
+              echo "INFO: Starting Docker service"
+              systemctl enable docker
+              systemctl start docker
+              echo "INFO: Docker installation complete"
+              docker --version
+              
+              # Install code-server
+              echo "INFO: Installing code-server"
+              # curl -fOL https://github.com/coder/code-server/releases/download/v${VERSION}/code-server_${VERSION}_amd64.deb
+              curl -fOL https://github.com/coder/code-server/releases/download/v${VERSION}/code-server_${VERSION}_amd64.deb
+              sudo dpkg -i code-server_${VERSION}_amd64.deb
+              echo "INFO: Enabling and starting code-server"
+              sudo systemctl enable --now code-server@ubuntu
+              sleep 30
+              
+              # Configure password
+              echo "INFO: Configuring code-server"
+              # sed -i.bak 's/auth: password/auth: none/' /home/ubuntu/.config/code-server/config.yaml
+              # Expose code server service 
+              sed -i.bak 's/bind-addr: 127.0.0.1:8080/bind-addr: 0.0.0.0:8080/' /home/ubuntu/.config/code-server/config.yaml
+              
+              # Restart code server
+              echo "INFO: Restarting code-server"
+              sudo systemctl restart code-server@ubuntu
+              
+              # Install extension amazonwebservices.amazon-q-vscode
+              echo "INFO: Installing Amazon Q extension"
+              sudo -u ubuntu code-server --install-extension amazonwebservices.amazon-q-vscode
+              
+              # Restart code server
+              echo "INFO: Final restart of code-server"
+              sudo systemctl restart code-server@ubuntu
+              
+              # Store password in SSM Parameter Store for easy retrieval
+              echo "INFO: Storing password in SSM Parameter Store"
+              sleep 10  # Wait for config file to be fully written
+              CODE_SERVER_PASSWORD=$(sudo grep "^password:" /home/ubuntu/.config/code-server/config.yaml | cut -d' ' -f2)
+              echo "INFO: Extracted password, creating SSM parameter"
+              aws ssm put-parameter \
+                --name "/code-server/password" \
+                --value "$CODE_SERVER_PASSWORD" \
+                --type "SecureString" \
+                --region ${AWS::Region} \
+                --overwrite
+              echo "INFO: SSM parameter creation complete"
+
+              # Clone GitHub repository if token is provided
+              if [ -n "${GITHUB_TOKEN}" ]; then
+                echo "INFO: GitHub access token provided, cloning repository"
+                cd /home/ubuntu
+                sudo -u ubuntu git clone https://x-access-token:${GITHUB_TOKEN}@github.com/shkim4u/${PROJECT_NAME}
+                echo "INFO: Repository cloned successfully"
+
+                # Configure VSCode Server environemnts, including Python 3.12, Node.js 22, Claude Code and Amazon Q
+                echo "INFO: Configuring VSCode Server environment"
+                if sudo -i -u ubuntu bash -c "cd /home/ubuntu/${PROJECT_NAME} && ./configure-vscode-server.sh"; then
+                  echo "INFO: VSCode Server configuration completed successfully"
+                else
+                  echo "ERROR: VSCode Server configuration failed with exit code $?"
+                fi
+              else
+                echo "INFO: No GitHub access token provided, skipping repository clone"
+              fi
+
+              # Configure SSH public key for Remote SSH
+              if [ -n "${REMOTE_SSH_PUBLIC_KEY}" ]; then
+                echo "INFO: Configuring SSH public key for VSCode Remote SSH"
+                sudo -i -u ubuntu bash -c "mkdir -p ~/.ssh && chmod 700 ~/.ssh"
+                sudo -i -u ubuntu bash -c "echo '${REMOTE_SSH_PUBLIC_KEY}' >> ~/.ssh/authorized_keys"
+                sudo -i -u ubuntu bash -c "chmod 600 ~/.ssh/authorized_keys"
+                echo "INFO: SSH public key configuration complete"
+              else
+                echo "INFO: No SSH public key provided, skipping SSH configuration"
+              fi
+
+              # Sync SageMaker models to S3 bucket
+              if [ -d "/home/ubuntu/${PROJECT_NAME}" ]; then
+                echo "INFO: Syncing SageMaker models to S3 bucket"
+                if sudo -i -u ubuntu bash -c "cd /home/ubuntu/${PROJECT_NAME} && ./scripts/sync-sagemaker-models-from-source.sh --target-bucket ${S3_BUCKET_NAME}"; then
+                  echo "INFO: SageMaker models sync completed successfully"
+                else
+                  echo "ERROR: SageMaker models sync failed with exit code $?"
+                fi
+              else
+                echo "INFO: ${PROJECT_NAME} directory not found, skipping SageMaker models sync"
+              fi
+
+              # npm build and deploy (only if DeployProjectResource is True)
+              DEPLOY_RESOURCE=$(echo "${DEPLOY_PROJECT_RESOURCE}" | tr '[:upper:]' '[:lower:]')
+              if [ "$DEPLOY_RESOURCE" = "true" ]; then
+                if [ -d "/home/ubuntu/${PROJECT_NAME}" ]; then
+                  echo "INFO: Running npm build and deploy for ${PROJECT_NAME}"
+                  if sudo -u ubuntu bash -c 'export HOME=/home/ubuntu && cd $HOME && source ~/.bashrc && export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" && cd '"${PROJECT_NAME}"' && npm ci && npm run bootstrap && npm run build && npm run deploy'; then
+                    echo "INFO: npm build and deploy completed successfully"
+                  else
+                    echo "ERROR: npm build and deploy failed with exit code $?"
+                  fi
+                else
+                  echo "INFO: ${PROJECT_NAME} directory not found, skipping npm build and deploy"
+                fi
+              else
+                echo "INFO: DeployProjectResource is false, skipping npm build and deploy"
+              fi
+
+              echo "INFO: UserData script execution finished"
+            - VERSION: !Ref VSCodeServerVersion
+              GITHUB_TOKEN: !Ref GitHubAccessToken
+              REMOTE_SSH_PUBLIC_KEY: !Ref RemoteSSHPublicKey
+              S3_BUCKET_NAME: !Ref SageMakerModelsS3Bucket
+              PROJECT_NAME: !Ref ProjectName
+              DEPLOY_PROJECT_RESOURCE: !Ref DeployProjectResource
+#------------------------------------------------------
+# CloudFront Cached Policy
+#------------------------------------------------------
+  VSCodeServerCloudFrontCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        DefaultTTL: 86400
+        MaxTTL: 31536000
+        MinTTL: 1
+        Name: !Join ['-', ['VSCodeServer', !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]]]
+        ParametersInCacheKeyAndForwardedToOrigin:
+          CookiesConfig:
+            CookieBehavior: all
+          EnableAcceptEncodingGzip: False
+          HeadersConfig:
+            HeaderBehavior: whitelist
+            Headers:
+              - Accept-Charset
+              - Authorization
+              - Origin
+              - Accept
+              - Referer
+              - Host
+              - Accept-Language
+              - Accept-Encoding
+              - Accept-Datetime
+          QueryStringsConfig:
+            QueryStringBehavior: all
+#------------------------------------------------------
+# CloudFront Distribution
+#------------------------------------------------------
+  VSCodeServerCloudFront:
+    Type: AWS::CloudFront::Distribution
+    DependsOn: VSCodeServerEIPAssociation
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W10
+            reason: disable access logging for demo purpose
+          - id: W70
+            reason: no TLS version for demo purpose
+    Properties:
+      DistributionConfig:
+        Origins:
+          - DomainName: !GetAtt VSCodeServer.PublicDnsName
+            Id: VS-code-server
+            CustomOriginConfig:
+              HTTPPort: 8080
+              OriginProtocolPolicy: http-only
+        Enabled: true
+        DefaultCacheBehavior:
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+            - PUT
+            - POST
+            - PATCH
+            - DELETE
+          ForwardedValues:
+            QueryString: 'false'
+          Compress: false
+          TargetOriginId: VS-code-server
+          ViewerProtocolPolicy: allow-all
+          OriginRequestPolicyId: !Ref OriginRequestPolicyId
+          CachePolicyId: !Ref VSCodeServerCloudFrontCachePolicy
+#------------------------------------------------------
+# Exported output
+#------------------------------------------------------
+Outputs:
+  VSCodeServerCloudFrontDomainName:
+    Value:
+      !Sub
+        - "https://${domain}"
+        - { domain: !GetAtt VSCodeServerCloudFront.DomainName }
+    Export:
+      Name: !Sub ${AWS::StackName}-domain-name
+  VSCodeServerPublicIP:
+    Value: !Ref VSCodeServerEIP
+    Export:
+      Name: !Sub ${AWS::StackName}-code-server-public-ip
+  VSCodeServerPrivateIP:
+    Value: !GetAtt VSCodeServer.PrivateIp
+    Export:
+      Name: !Sub ${AWS::StackName}-code-server-private-ip
+  VSCodeServerRoleARN:
+    Value: !GetAtt VSCodeServerIAMRole.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-code-server-role-arn
+  VSCodeServerInstanceId:
+    Value: !Ref VSCodeServer
+    Export:
+      Name: !Sub ${AWS::StackName}-code-server-instance-id
+  VSCodeServerPasswordSSM:
+    Description: SSM Parameter containing the code-server password
+    Value: "/code-server/password"
+    Export:
+      Name: !Sub ${AWS::StackName}-code-server-password-ssm
