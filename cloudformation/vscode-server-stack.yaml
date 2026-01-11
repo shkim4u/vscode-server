@@ -244,7 +244,7 @@ Resources:
                   - s3:ListBucketVersions
                   - s3:DeleteObject
                   - s3:DeleteObjectVersion
-                  - s3:PutBucketPublicAccessBlock
+                  - s3:PutPublicAccessBlock
                   - s3:PutBucketEncryption
                   - s3:PutBucketTagging
                 Resource:
@@ -265,17 +265,20 @@ Resources:
           import boto3
           import cfnresponse
           import logging
+          import time
           from botocore.exceptions import ClientError
 
           logger = logging.getLogger()
           logger.setLevel(logging.INFO)
-          s3_client = boto3.client('s3')
-          s3_resource = boto3.resource('s3')
 
           def handler(event, context):
               logger.info(f'Event: {event}')
               bucket_name = event['ResourceProperties']['BucketName']
               region = event['ResourceProperties']['Region']
+
+              # Create clients inside handler to avoid initialization issues
+              s3_client = boto3.client('s3')
+              s3_resource = boto3.resource('s3')
 
               try:
                   if event['RequestType'] == 'Create' or event['RequestType'] == 'Update':
@@ -312,8 +315,11 @@ Resources:
                                       CreateBucketConfiguration={'LocationConstraint': region}
                                   )
 
+                              # Wait a moment for bucket to be fully created
+                              time.sleep(2)
+
                               # Configure bucket settings
-                              s3_client.put_bucket_public_access_block(
+                              s3_client.put_public_access_block(
                                   Bucket=bucket_name,
                                   PublicAccessBlockConfiguration={
                                       'BlockPublicAcls': True,
