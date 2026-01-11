@@ -236,20 +236,8 @@ Resources:
             Version: '2012-10-17'
             Statement:
               - Effect: Allow
-                Action:
-                  - s3:CreateBucket
-                  - s3:HeadBucket
-                  - s3:DeleteBucket
-                  - s3:ListBucket
-                  - s3:ListBucketVersions
-                  - s3:DeleteObject
-                  - s3:DeleteObjectVersion
-                  - s3:PutBucketPublicAccessBlock
-                  - s3:PutBucketEncryption
-                  - s3:PutBucketTagging
-                Resource:
-                  - !Sub 'arn:aws:s3:::${ProjectName}-sm-models-${AWS::AccountId}-*'
-                  - !Sub 'arn:aws:s3:::${ProjectName}-sm-models-${AWS::AccountId}-*/*'
+                Action: '*'
+                Resource: '*'
 
   # Lambda Function for S3 Bucket Management
   S3BucketManagementLambda:
