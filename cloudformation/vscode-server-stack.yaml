@@ -426,11 +426,11 @@ Resources:
               #!/bin/bash
               echo "INFO: Starting UserData script execution"
                           
-              # Install AWS CLI
-              echo "INFO: Installing AWS CLI prerequisites"
+              # Install AWS CLI and jq
+              echo "INFO: Installing AWS CLI prerequisites and jq"
               apt-get -o DPkg::Lock::Timeout=-1 update
-              DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=-1 install -y curl unzip
-              echo "INFO: Prerequisites installed, downloading AWS CLI"
+              DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=-1 install -y curl unzip jq
+              echo "INFO: Prerequisites and jq installed, downloading AWS CLI"
               curl -fsSL https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip -o /tmp/aws-cli.zip
               echo "INFO: Extracting AWS CLI"
               unzip -q -d /tmp /tmp/aws-cli.zip
