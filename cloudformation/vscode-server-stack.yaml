@@ -217,29 +217,8 @@ Resources:
 #------------------------------------------------------
 # S3 Bucket
 #------------------------------------------------------
-  SageMakerModelsS3Bucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Sub
-        - "${ProjectName}-sm-models-${AWS::AccountId}-${RegionCode}"
-        - ProjectName: !Ref ProjectName
-          RegionCode: !FindInMap [RegionShortCode, !Ref "AWS::Region", Code]
-      PublicAccessBlockConfiguration:
-        BlockPublicAcls: true
-        BlockPublicPolicy: true
-        IgnorePublicAcls: true
-        RestrictPublicBuckets: true
-      BucketEncryption:
-        ServerSideEncryptionConfiguration:
-          - ServerSideEncryptionByDefault:
-              SSEAlgorithm: AES256
-      Tags:
-        - Key: Name
-          Value: SageMaker-Models-S3Bucket
-    DeletionPolicy: Delete
-
-  # Lambda Role for S3 Bucket Cleanup
-  S3BucketCleanupLambdaRole:
+  # Lambda Role for S3 Bucket Management (Create or Use Existing)
+  S3BucketManagementLambdaRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -252,28 +231,34 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       Policies:
-        - PolicyName: S3BucketCleanupPolicy
+        - PolicyName: S3BucketManagementPolicy
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
               - Effect: Allow
                 Action:
+                  - s3:CreateBucket
+                  - s3:HeadBucket
+                  - s3:DeleteBucket
                   - s3:ListBucket
                   - s3:ListBucketVersions
                   - s3:DeleteObject
                   - s3:DeleteObjectVersion
+                  - s3:PutBucketPublicAccessBlock
+                  - s3:PutBucketEncryption
+                  - s3:PutBucketTagging
                 Resource:
-                  - !GetAtt SageMakerModelsS3Bucket.Arn
-                  - !Sub '${SageMakerModelsS3Bucket.Arn}/*'
+                  - !Sub 'arn:aws:s3:::${ProjectName}-sm-models-${AWS::AccountId}-*'
+                  - !Sub 'arn:aws:s3:::${ProjectName}-sm-models-${AWS::AccountId}-*/*'
 
-  # Lambda Function for S3 Bucket Cleanup
-  S3BucketCleanupLambda:
+  # Lambda Function for S3 Bucket Management
+  S3BucketManagementLambda:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub '${AWS::StackName}-S3BucketCleanup'
+      FunctionName: !Sub '${AWS::StackName}-S3BucketManagement'
       Runtime: python3.12
       Handler: index.handler
-      Role: !GetAtt S3BucketCleanupLambdaRole.Arn
+      Role: !GetAtt S3BucketManagementLambdaRole.Arn
       Timeout: 300
       Code:
         ZipFile: |
@@ -283,36 +268,107 @@ Resources:
 
           logger = logging.getLogger()
           logger.setLevel(logging.INFO)
-          s3 = boto3.resource('s3')
+          s3_client = boto3.client('s3')
+          s3_resource = boto3.resource('s3')
 
           def handler(event, context):
               logger.info(f'Event: {event}')
               bucket_name = event['ResourceProperties']['BucketName']
+              region = event['ResourceProperties']['Region']
 
               try:
-                  if event['RequestType'] == 'Delete':
-                      logger.info(f'Emptying bucket: {bucket_name}')
-                      bucket = s3.Bucket(bucket_name)
+                  if event['RequestType'] == 'Create' or event['RequestType'] == 'Update':
+                      try:
+                          # Check if bucket exists
+                          s3_client.head_bucket(Bucket=bucket_name)
+                          logger.info(f'Bucket {bucket_name} already exists, using existing bucket')
+                          cfnresponse.send(event, context, cfnresponse.SUCCESS, {'BucketName': bucket_name})
+                      except s3_client.exceptions.NoSuchBucket:
+                          # Bucket doesn't exist, create it
+                          logger.info(f'Creating bucket: {bucket_name}')
+                          if region == 'us-east-1':
+                              s3_client.create_bucket(Bucket=bucket_name)
+                          else:
+                              s3_client.create_bucket(
+                                  Bucket=bucket_name,
+                                  CreateBucketConfiguration={'LocationConstraint': region}
+                              )
 
-                      # Delete all objects
-                      bucket.objects.all().delete()
+                          # Configure bucket settings
+                          s3_client.put_bucket_public_access_block(
+                              Bucket=bucket_name,
+                              PublicAccessBlockConfiguration={
+                                  'BlockPublicAcls': True,
+                                  'BlockPublicPolicy': True,
+                                  'IgnorePublicAcls': True,
+                                  'RestrictPublicBuckets': True
+                              }
+                          )
 
-                      # Delete all object versions
-                      bucket.object_versions.all().delete()
+                          s3_client.put_bucket_encryption(
+                              Bucket=bucket_name,
+                              ServerSideEncryptionConfiguration={
+                                  'Rules': [{
+                                      'ApplyServerSideEncryptionByDefault': {
+                                          'SSEAlgorithm': 'AES256'
+                                      }
+                                  }]
+                              }
+                          )
 
-                      logger.info(f'Successfully emptied bucket: {bucket_name}')
+                          s3_client.put_bucket_tagging(
+                              Bucket=bucket_name,
+                              Tagging={
+                                  'TagSet': [
+                                      {'Key': 'Name', 'Value': 'SageMaker-Models-S3Bucket'}
+                                  ]
+                              }
+                          )
 
-                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                          logger.info(f'Successfully created and configured bucket: {bucket_name}')
+                          cfnresponse.send(event, context, cfnresponse.SUCCESS, {'BucketName': bucket_name})
+                      except Exception as e:
+                          if 'Forbidden' in str(e) or 'AccessDenied' in str(e):
+                              logger.info(f'Bucket {bucket_name} exists but access denied, assuming it is managed elsewhere')
+                              cfnresponse.send(event, context, cfnresponse.SUCCESS, {'BucketName': bucket_name})
+                          else:
+                              raise
+
+                  elif event['RequestType'] == 'Delete':
+                      try:
+                          logger.info(f'Emptying and deleting bucket: {bucket_name}')
+                          bucket = s3_resource.Bucket(bucket_name)
+
+                          # Delete all objects
+                          bucket.objects.all().delete()
+
+                          # Delete all object versions
+                          bucket.object_versions.all().delete()
+
+                          # Delete the bucket
+                          s3_client.delete_bucket(Bucket=bucket_name)
+                          logger.info(f'Successfully deleted bucket: {bucket_name}')
+                      except s3_client.exceptions.NoSuchBucket:
+                          logger.info(f'Bucket {bucket_name} does not exist, nothing to delete')
+                      except Exception as e:
+                          logger.warning(f'Error deleting bucket {bucket_name}: {str(e)}. Continuing anyway.')
+
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+
               except Exception as e:
                   logger.error(f'Error: {str(e)}')
                   cfnresponse.send(event, context, cfnresponse.FAILED, {'Error': str(e)})
 
-  # Custom Resource to trigger bucket cleanup on stack deletion
-  S3BucketCleanupCustomResource:
-    Type: Custom::S3BucketCleanup
+  # Custom Resource for S3 Bucket Management
+  SageMakerModelsS3Bucket:
+    Type: Custom::S3BucketManagement
     Properties:
-      ServiceToken: !GetAtt S3BucketCleanupLambda.Arn
-      BucketName: !Ref SageMakerModelsS3Bucket
+      ServiceToken: !GetAtt S3BucketManagementLambda.Arn
+      BucketName: !Sub
+        - "${ProjectName}-sm-models-${AWS::AccountId}-${RegionCode}"
+        - ProjectName: !Ref ProjectName
+          RegionCode: !FindInMap [RegionShortCode, !Ref "AWS::Region", Code]
+      Region: !Ref AWS::Region
 
 #------------------------------------------------------
 # Security Group
@@ -654,7 +710,7 @@ Resources:
             - VERSION: !Ref VSCodeServerVersion
               GITHUB_TOKEN: !Ref GitHubAccessToken
               REMOTE_SSH_PUBLIC_KEY: !Ref RemoteSSHPublicKey
-              S3_BUCKET_NAME: !Ref SageMakerModelsS3Bucket
+              S3_BUCKET_NAME: !GetAtt SageMakerModelsS3Bucket.BucketName
               PROJECT_NAME: !Ref ProjectName
               DEPLOY_PROJECT_RESOURCE: !Ref DeployProjectResource
 #------------------------------------------------------
