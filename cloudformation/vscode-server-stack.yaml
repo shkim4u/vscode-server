@@ -20,6 +20,14 @@ Mappings:
     # (2025-11-09) KSH: 서울 리전 추가
     ap-northeast-2:
       PrefixListId: "pl-22a6434b"
+  RegionShortCode:
+    ap-northeast-2:
+      Code: apne2
+    us-east-1:
+      Code: use1
+    us-west-2:
+      Code: usw2
+
 #------------------------------------------------------
 # Parameters
 #------------------------------------------------------
@@ -194,6 +202,29 @@ Resources:
         - !Ref VSCodeServerPrivateRouteTable
 
 #------------------------------------------------------
+# S3 Bucket
+#------------------------------------------------------
+  AxOnMasterySMModelsS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub
+        - "ax-on-mastery-sm-models-${AWS::AccountId}-${RegionCode}"
+        - RegionCode: !FindInMap [RegionShortCode, !Ref "AWS::Region", Code]
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      Tags:
+        - Key: Name
+          Value: AxOnMastery-SM-Models-S3Bucket
+    DeletionPolicy: Delete
+
+#------------------------------------------------------
 # Security Group
 #------------------------------------------------------
   VSCodeServerSecurityGroup:
@@ -252,7 +283,7 @@ Resources:
               Service:
                 - ec2.amazonaws.com
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+        - arn:aws:iam::aws:policy/AdministratorAccess
       Policies:
         - PolicyName: SSMParameterAccess
           PolicyDocument:
@@ -359,6 +390,7 @@ Resources:
 #------------------------------------------------------
   VSCodeServer:
     Type: AWS::EC2::Instance
+    DependsOn: AxOnMasterySMModelsS3Bucket
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -499,10 +531,23 @@ Resources:
                 echo "INFO: No SSH public key provided, skipping SSH configuration"
               fi
 
+              # Sync SageMaker models to S3 bucket
+              if [ -d "/home/ubuntu/ax-on-mastery" ]; then
+                echo "INFO: Syncing SageMaker models to S3 bucket"
+                if sudo -i -u ubuntu bash -c "cd /home/ubuntu/ax-on-mastery && ./scripts/sync-sagemaker-models-from-source.sh --target-bucket ${S3_BUCKET_NAME}"; then
+                  echo "INFO: SageMaker models sync completed successfully"
+                else
+                  echo "ERROR: SageMaker models sync failed with exit code $?"
+                fi
+              else
+                echo "INFO: ax-on-mastery directory not found, skipping SageMaker models sync"
+              fi
+
               echo "INFO: UserData script execution finished"
             - VERSION: !Ref VSCodeServerVersion
               GITHUB_TOKEN: !Ref GitHubAccessToken
               REMOTE_SSH_PUBLIC_KEY: !Ref RemoteSSHPublicKey
+              S3_BUCKET_NAME: !Ref AxOnMasterySMModelsS3Bucket
 #------------------------------------------------------
 # CloudFront Cached Policy
 #------------------------------------------------------
