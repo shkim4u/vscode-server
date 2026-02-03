@@ -80,6 +80,19 @@ Parameters:
       - "true"
       - "False"
       - "false"
+  AvailabilityZone:
+    Type: String
+    Description: Availability Zone for EC2 instance (a or c)
+    Default: "a"
+    AllowedValues:
+      - "a"
+      - "c"
+#------------------------------------------------------
+# Conditions
+#------------------------------------------------------
+Conditions:
+  UseAvailabilityZoneA: !Equals [!Ref AvailabilityZone, "a"]
+
 #------------------------------------------------------
 # VPC and Network Resources
 #------------------------------------------------------
@@ -573,7 +586,7 @@ Resources:
       NetworkInterfaces:
         - DeviceIndex: "0"
           AssociatePublicIpAddress: "true"
-          SubnetId: !Ref VSCodeServerPublicSubnetA
+          SubnetId: !If [UseAvailabilityZoneA, !Ref VSCodeServerPublicSubnetA, !Ref VSCodeServerPublicSubnetC]
           GroupSet:
             - Fn::GetAtt:
                 - VSCodeServerSecurityGroup
