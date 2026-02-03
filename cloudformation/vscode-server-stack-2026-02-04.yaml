@@ -37,7 +37,7 @@ Parameters:
     Type: String
     # Default: t2.xlarge
     # GPU: g5.12xlarge
-    Default: m8i.2xlarge
+    Default: m7i.2xlarge
     ConstraintDescription: must be a valid EC2 instance type.
   LatestAmiId:
     Description: latest image id for ubuntu
@@ -82,43 +82,16 @@ Parameters:
       - "false"
   AvailabilityZone:
     Type: String
-    Description: Availability Zone for EC2 instance (a, b, c, d, or auto for StackId-based selection)
-    Default: "auto"
+    Description: Availability Zone for EC2 instance (a or c)
+    Default: "a"
     AllowedValues:
       - "a"
-      - "b"
       - "c"
-      - "d"
-      - "auto"
 #------------------------------------------------------
 # Conditions
 #------------------------------------------------------
 Conditions:
-  UseAutoAZ: !Equals [!Ref AvailabilityZone, "auto"]
-  UseManualAZA: !Equals [!Ref AvailabilityZone, "a"]
-  UseManualAZB: !Equals [!Ref AvailabilityZone, "b"]
-  UseManualAZC: !Equals [!Ref AvailabilityZone, "c"]
-  UseManualAZD: !Equals [!Ref AvailabilityZone, "d"]
-  UseAZA: !Or
-    - !Condition UseManualAZA
-    - !And
-      - !Condition UseAutoAZ
-      - !Equals [!GetAtt AZSelectionCustomResource.AvailabilityZone, "a"]
-  UseAZB: !Or
-    - !Condition UseManualAZB
-    - !And
-      - !Condition UseAutoAZ
-      - !Equals [!GetAtt AZSelectionCustomResource.AvailabilityZone, "b"]
-  UseAZC: !Or
-    - !Condition UseManualAZC
-    - !And
-      - !Condition UseAutoAZ
-      - !Equals [!GetAtt AZSelectionCustomResource.AvailabilityZone, "c"]
-  UseAZD: !Or
-    - !Condition UseManualAZD
-    - !And
-      - !Condition UseAutoAZ
-      - !Equals [!GetAtt AZSelectionCustomResource.AvailabilityZone, "d"]
+  UseAvailabilityZoneA: !Equals [!Ref AvailabilityZone, "a"]
 
 #------------------------------------------------------
 # VPC and Network Resources
@@ -161,38 +134,16 @@ Resources:
         - Key: Name
           Value: VSCodeServer-Public-Subnet-A
 
-  VSCodeServerPublicSubnetB:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref VSCodeServerVPC
-      CidrBlock: 10.0.1.0/24
-      AvailabilityZone: !Sub "${AWS::Region}b"
-      MapPublicIpOnLaunch: true
-      Tags:
-        - Key: Name
-          Value: VSCodeServer-Public-Subnet-B
-
   VSCodeServerPublicSubnetC:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VSCodeServerVPC
-      CidrBlock: 10.0.2.0/24
+      CidrBlock: 10.0.1.0/24
       AvailabilityZone: !Sub "${AWS::Region}c"
       MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
           Value: VSCodeServer-Public-Subnet-C
-
-  VSCodeServerPublicSubnetD:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref VSCodeServerVPC
-      CidrBlock: 10.0.3.0/24
-      AvailabilityZone: !Sub "${AWS::Region}d"
-      MapPublicIpOnLaunch: true
-      Tags:
-        - Key: Name
-          Value: VSCodeServer-Public-Subnet-D
 
   # Private Subnets
   VSCodeServerPrivateSubnetA:
@@ -205,35 +156,15 @@ Resources:
         - Key: Name
           Value: VSCodeServer-Private-Subnet-A
 
-  VSCodeServerPrivateSubnetB:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref VSCodeServerVPC
-      CidrBlock: 10.0.11.0/24
-      AvailabilityZone: !Sub "${AWS::Region}b"
-      Tags:
-        - Key: Name
-          Value: VSCodeServer-Private-Subnet-B
-
   VSCodeServerPrivateSubnetC:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VSCodeServerVPC
-      CidrBlock: 10.0.12.0/24
+      CidrBlock: 10.0.11.0/24
       AvailabilityZone: !Sub "${AWS::Region}c"
       Tags:
         - Key: Name
           Value: VSCodeServer-Private-Subnet-C
-
-  VSCodeServerPrivateSubnetD:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref VSCodeServerVPC
-      CidrBlock: 10.0.13.0/24
-      AvailabilityZone: !Sub "${AWS::Region}d"
-      Tags:
-        - Key: Name
-          Value: VSCodeServer-Private-Subnet-D
 
   # Public Route Table
   VSCodeServerPublicRouteTable:
@@ -258,22 +189,10 @@ Resources:
       SubnetId: !Ref VSCodeServerPublicSubnetA
       RouteTableId: !Ref VSCodeServerPublicRouteTable
 
-  VSCodeServerPublicSubnetBRouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      SubnetId: !Ref VSCodeServerPublicSubnetB
-      RouteTableId: !Ref VSCodeServerPublicRouteTable
-
   VSCodeServerPublicSubnetCRouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref VSCodeServerPublicSubnetC
-      RouteTableId: !Ref VSCodeServerPublicRouteTable
-
-  VSCodeServerPublicSubnetDRouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      SubnetId: !Ref VSCodeServerPublicSubnetD
       RouteTableId: !Ref VSCodeServerPublicRouteTable
 
   # Private Route Table
@@ -291,22 +210,10 @@ Resources:
       SubnetId: !Ref VSCodeServerPrivateSubnetA
       RouteTableId: !Ref VSCodeServerPrivateRouteTable
 
-  VSCodeServerPrivateSubnetBRouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      SubnetId: !Ref VSCodeServerPrivateSubnetB
-      RouteTableId: !Ref VSCodeServerPrivateRouteTable
-
   VSCodeServerPrivateSubnetCRouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref VSCodeServerPrivateSubnetC
-      RouteTableId: !Ref VSCodeServerPrivateRouteTable
-
-  VSCodeServerPrivateSubnetDRouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      SubnetId: !Ref VSCodeServerPrivateSubnetD
       RouteTableId: !Ref VSCodeServerPrivateRouteTable
 
   # S3 Gateway VPC Endpoint
@@ -491,70 +398,6 @@ Resources:
       Region: !Ref AWS::Region
 
 #------------------------------------------------------
-# Lambda for AZ Selection
-#------------------------------------------------------
-  AZSelectionLambdaRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: lambda.amazonaws.com
-            Action: sts:AssumeRole
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-
-  AZSelectionLambda:
-    Type: AWS::Lambda::Function
-    Properties:
-      FunctionName: !Sub '${AWS::StackName}-AZSelection'
-      Runtime: python3.12
-      Handler: index.handler
-      Role: !GetAtt AZSelectionLambdaRole.Arn
-      Timeout: 30
-      Code:
-        ZipFile: |
-          import cfnresponse
-          import logging
-
-          logger = logging.getLogger()
-          logger.setLevel(logging.INFO)
-
-          def handler(event, context):
-              logger.info(f'Event: {event}')
-
-              try:
-                  if event['RequestType'] in ['Create', 'Update']:
-                      stack_id = event['StackId']
-                      # Extract guid from StackId (format: arn:aws:cloudformation:region:account:stack/name/guid)
-                      guid = stack_id.split('/')[-1]
-                      # Use first character of guid to determine AZ (0-3 -> a, 4-7 -> b, 8-b -> c, c-f -> d)
-                      first_char = guid[0].lower()
-                      if first_char in '0123':
-                          az_suffix = 'a'
-                      elif first_char in '4567':
-                          az_suffix = 'b'
-                      elif first_char in '89ab':
-                          az_suffix = 'c'
-                      else:  # c-f
-                          az_suffix = 'd'
-
-                      logger.info(f'StackId: {stack_id}, GUID: {guid}, First char: {first_char}, AZ: {az_suffix}')
-                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {'AvailabilityZone': az_suffix})
-                  else:
-                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
-              except Exception as e:
-                  logger.error(f'Error: {str(e)}')
-                  cfnresponse.send(event, context, cfnresponse.FAILED, {'Error': str(e)})
-
-  AZSelectionCustomResource:
-    Type: Custom::AZSelection
-    Properties:
-      ServiceToken: !GetAtt AZSelectionLambda.Arn
-
-#------------------------------------------------------
 # Security Group
 #------------------------------------------------------
   VSCodeServerSecurityGroup:
@@ -667,15 +510,11 @@ Resources:
                     iam:PassedToService: ssm.amazonaws.com
 #------------------------------------------------------
 # EventBridge Rules for Instance Scheduling (Weekdays Only)
-# NOTE: To exclude 2026-03-01 and 2026-03-02:
-#   - Disable this rule on 2026-02-28 (to skip 2026-03-01 8:30 AM KST start)
-#   - Keep disabled on 2026-03-01 (to skip 2026-03-02 8:30 AM KST start)
-#   - Re-enable on 2026-03-02 (to resume normal schedule from 2026-03-03)
 #------------------------------------------------------
   VSCodeServerStartRule:
     Type: AWS::Events::Rule
     Properties:
-      Description: Start VSCode Server at 8:30 AM KST on weekdays (11:30 PM UTC previous day, Sun-Thu). Manually disable 2026-02-28 to 2026-03-01 to skip 2026-03-01 and 2026-03-02.
+      Description: Start VSCode Server at 8:30 AM KST on weekdays (11:30 PM UTC previous day, Sun-Thu)
       ScheduleExpression: "cron(30 23 ? * SUN-THU *)"
       State: ENABLED
       Targets:
@@ -747,16 +586,7 @@ Resources:
       NetworkInterfaces:
         - DeviceIndex: "0"
           AssociatePublicIpAddress: "true"
-          SubnetId: !If
-            - UseAZA
-            - !Ref VSCodeServerPublicSubnetA
-            - !If
-              - UseAZB
-              - !Ref VSCodeServerPublicSubnetB
-              - !If
-                - UseAZC
-                - !Ref VSCodeServerPublicSubnetC
-                - !Ref VSCodeServerPublicSubnetD
+          SubnetId: !If [UseAvailabilityZoneA, !Ref VSCodeServerPublicSubnetA, !Ref VSCodeServerPublicSubnetC]
           GroupSet:
             - Fn::GetAtt:
                 - VSCodeServerSecurityGroup
