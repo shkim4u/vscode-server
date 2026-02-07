@@ -518,21 +518,45 @@ Resources:
               try:
                   if event['RequestType'] in ['Create', 'Update']:
                       stack_id = event['StackId']
-                      # Extract guid from StackId (format: arn:aws:cloudformation:region:account:stack/name/guid)
-                      guid = stack_id.split('/')[-1]
-                      # Use first character of guid to determine AZ (0-3 -> a, 4-7 -> b, 8-b -> c, c-f -> d)
-                      first_char = guid[0].lower()
-                      if first_char in '0123':
-                          az_suffix = 'a'
-                      elif first_char in '4567':
-                          az_suffix = 'b'
-                      elif first_char in '89ab':
-                          az_suffix = 'c'
-                      else:  # c-f
-                          az_suffix = 'd'
+                      az_param = event['ResourceProperties']['AvailabilityZoneParam']
+                      subnet_a = event['ResourceProperties']['SubnetA']
+                      subnet_b = event['ResourceProperties']['SubnetB']
+                      subnet_c = event['ResourceProperties']['SubnetC']
+                      subnet_d = event['ResourceProperties']['SubnetD']
 
-                      logger.info(f'StackId: {stack_id}, GUID: {guid}, First char: {first_char}, AZ: {az_suffix}')
-                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {'AvailabilityZone': az_suffix})
+                      # Determine AZ suffix
+                      if az_param == 'auto':
+                          # Extract guid from StackId (format: arn:aws:cloudformation:region:account:stack/name/guid)
+                          guid = stack_id.split('/')[-1]
+                          # Use first character of guid to determine AZ (0-3 -> a, 4-7 -> b, 8-b -> c, c-f -> d)
+                          first_char = guid[0].lower()
+                          if first_char in '0123':
+                              az_suffix = 'a'
+                          elif first_char in '4567':
+                              az_suffix = 'b'
+                          elif first_char in '89ab':
+                              az_suffix = 'c'
+                          else:  # c-f
+                              az_suffix = 'd'
+                          logger.info(f'Auto mode - StackId: {stack_id}, GUID: {guid}, First char: {first_char}, AZ: {az_suffix}')
+                      else:
+                          az_suffix = az_param
+                          logger.info(f'Manual mode - AZ: {az_suffix}')
+
+                      # Select subnet based on AZ
+                      subnet_map = {
+                          'a': subnet_a,
+                          'b': subnet_b,
+                          'c': subnet_c,
+                          'd': subnet_d
+                      }
+                      selected_subnet = subnet_map.get(az_suffix, subnet_a)
+
+                      logger.info(f'Selected AZ: {az_suffix}, Selected Subnet: {selected_subnet}')
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {
+                          'AvailabilityZone': az_suffix,
+                          'SubnetId': selected_subnet
+                      })
                   else:
                       cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
               except Exception as e:
@@ -541,8 +565,18 @@ Resources:
 
   AZSelectionCustomResource:
     Type: Custom::AZSelection
+    DependsOn:
+      - VSCodeServerPublicSubnetA
+      - VSCodeServerPublicSubnetB
+      - VSCodeServerPublicSubnetC
+      - VSCodeServerPublicSubnetD
     Properties:
       ServiceToken: !GetAtt AZSelectionLambda.Arn
+      AvailabilityZoneParam: !Ref AvailabilityZone
+      SubnetA: !Ref VSCodeServerPublicSubnetA
+      SubnetB: !Ref VSCodeServerPublicSubnetB
+      SubnetC: !Ref VSCodeServerPublicSubnetC
+      SubnetD: !Ref VSCodeServerPublicSubnetD
 
 #------------------------------------------------------
 # Security Group
@@ -737,37 +771,7 @@ Resources:
       NetworkInterfaces:
         - DeviceIndex: "0"
           AssociatePublicIpAddress: "true"
-          SubnetId:
-            Fn::If:
-              - UseAutoAZ
-              # Auto AZ selection - use Custom Resource result
-              - Fn::If:
-                - Fn::Equals:
-                  - Fn::GetAtt: [AZSelectionCustomResource, AvailabilityZone]
-                  - "a"
-                - Ref: VSCodeServerPublicSubnetA
-                - Fn::If:
-                  - Fn::Equals:
-                    - Fn::GetAtt: [AZSelectionCustomResource, AvailabilityZone]
-                    - "b"
-                  - Ref: VSCodeServerPublicSubnetB
-                  - Fn::If:
-                    - Fn::Equals:
-                      - Fn::GetAtt: [AZSelectionCustomResource, AvailabilityZone]
-                      - "c"
-                    - Ref: VSCodeServerPublicSubnetC
-                    - Ref: VSCodeServerPublicSubnetD
-              # Manual AZ selection
-              - Fn::If:
-                - UseManualAZA
-                - Ref: VSCodeServerPublicSubnetA
-                - Fn::If:
-                  - UseManualAZB
-                  - Ref: VSCodeServerPublicSubnetB
-                  - Fn::If:
-                    - UseManualAZC
-                    - Ref: VSCodeServerPublicSubnetC
-                    - Ref: VSCodeServerPublicSubnetD
+          SubnetId: !GetAtt AZSelectionCustomResource.SubnetId
           GroupSet:
             - Fn::GetAtt:
                 - VSCodeServerSecurityGroup
