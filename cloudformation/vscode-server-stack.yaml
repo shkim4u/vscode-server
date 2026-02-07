@@ -109,26 +109,6 @@ Conditions:
   UseManualAZB: !Equals [!Ref AvailabilityZone, "b"]
   UseManualAZC: !Equals [!Ref AvailabilityZone, "c"]
   UseManualAZD: !Equals [!Ref AvailabilityZone, "d"]
-  UseAZA: !Or
-    - !Condition UseManualAZA
-    - !And
-      - !Condition UseAutoAZ
-      - !Equals [!GetAtt AZSelectionCustomResource.AvailabilityZone, "a"]
-  UseAZB: !Or
-    - !Condition UseManualAZB
-    - !And
-      - !Condition UseAutoAZ
-      - !Equals [!GetAtt AZSelectionCustomResource.AvailabilityZone, "b"]
-  UseAZC: !Or
-    - !Condition UseManualAZC
-    - !And
-      - !Condition UseAutoAZ
-      - !Equals [!GetAtt AZSelectionCustomResource.AvailabilityZone, "c"]
-  UseAZD: !Or
-    - !Condition UseManualAZD
-    - !And
-      - !Condition UseAutoAZ
-      - !Equals [!GetAtt AZSelectionCustomResource.AvailabilityZone, "d"]
 
 #------------------------------------------------------
 # VPC and Network Resources
@@ -757,16 +737,37 @@ Resources:
       NetworkInterfaces:
         - DeviceIndex: "0"
           AssociatePublicIpAddress: "true"
-          SubnetId: !If
-            - UseAZA
-            - !Ref VSCodeServerPublicSubnetA
-            - !If
-              - UseAZB
-              - !Ref VSCodeServerPublicSubnetB
-              - !If
-                - UseAZC
-                - !Ref VSCodeServerPublicSubnetC
-                - !Ref VSCodeServerPublicSubnetD
+          SubnetId:
+            Fn::If:
+              - UseAutoAZ
+              # Auto AZ selection - use Custom Resource result
+              - Fn::If:
+                - Fn::Equals:
+                  - Fn::GetAtt: [AZSelectionCustomResource, AvailabilityZone]
+                  - "a"
+                - Ref: VSCodeServerPublicSubnetA
+                - Fn::If:
+                  - Fn::Equals:
+                    - Fn::GetAtt: [AZSelectionCustomResource, AvailabilityZone]
+                    - "b"
+                  - Ref: VSCodeServerPublicSubnetB
+                  - Fn::If:
+                    - Fn::Equals:
+                      - Fn::GetAtt: [AZSelectionCustomResource, AvailabilityZone]
+                      - "c"
+                    - Ref: VSCodeServerPublicSubnetC
+                    - Ref: VSCodeServerPublicSubnetD
+              # Manual AZ selection
+              - Fn::If:
+                - UseManualAZA
+                - Ref: VSCodeServerPublicSubnetA
+                - Fn::If:
+                  - UseManualAZB
+                  - Ref: VSCodeServerPublicSubnetB
+                  - Fn::If:
+                    - UseManualAZC
+                    - Ref: VSCodeServerPublicSubnetC
+                    - Ref: VSCodeServerPublicSubnetD
           GroupSet:
             - Fn::GetAtt:
                 - VSCodeServerSecurityGroup
