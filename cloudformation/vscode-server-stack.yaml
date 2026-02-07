@@ -101,16 +101,6 @@ Parameters:
     Default: ""
     NoEcho: true
 #------------------------------------------------------
-# Conditions
-#------------------------------------------------------
-Conditions:
-  UseAutoAZ: !Equals [!Ref AvailabilityZone, "auto"]
-  UseManualAZA: !Equals [!Ref AvailabilityZone, "a"]
-  UseManualAZB: !Equals [!Ref AvailabilityZone, "b"]
-  UseManualAZC: !Equals [!Ref AvailabilityZone, "c"]
-  UseManualAZD: !Equals [!Ref AvailabilityZone, "d"]
-
-#------------------------------------------------------
 # VPC and Network Resources
 #------------------------------------------------------
 Resources:
