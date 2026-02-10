@@ -930,7 +930,7 @@ Resources:
                 if [ -d "/home/ubuntu/${PROJECT_NAME}" ]; then
                   if [ "$DEPLOY_INIT_MINIMAL" = "true" ]; then
                     echo "INFO: Running npm build and deploy:init-minimal for ${PROJECT_NAME}"
-                    if sudo -u ubuntu bash -c 'export HOME=/home/ubuntu && cd $HOME && source ~/.bashrc && export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" && cd '"${PROJECT_NAME}"' && npm ci && npm run bootstrap && npm run build && npm run deploy:init-minimal'; then
+                    if sudo -u ubuntu bash -c 'export HOME=/home/ubuntu && cd $HOME && source ~/.bashrc && export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" && cd '"${PROJECT_NAME}"' && cp bin/config-init-minimal.json bin/config.json && npm ci && npm run bootstrap && npm run build && npm run deploy'; then
                       echo "INFO: npm build and deploy:init-minimal completed successfully"
                     else
                       echo "ERROR: npm build and deploy:init-minimal failed with exit code $?"
