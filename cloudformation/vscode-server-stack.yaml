@@ -100,6 +100,15 @@ Parameters:
     Description: AWS Secret Access Key for AWS CLI configuration (leave empty to skip)
     Default: ""
     NoEcho: true
+  DeployInitMinimal:
+    Type: String
+    Description: Whether to deploy minimal initialization resources (True/False)
+    Default: "False"
+    AllowedValues:
+      - "True"
+      - "true"
+      - "False"
+      - "false"
 #------------------------------------------------------
 # VPC and Network Resources
 #------------------------------------------------------
@@ -916,13 +925,23 @@ Resources:
 
               # npm build and deploy (only if DeployProjectResource is True)
               DEPLOY_RESOURCE=$(echo "${DEPLOY_PROJECT_RESOURCE}" | tr '[:upper:]' '[:lower:]')
+              DEPLOY_INIT_MINIMAL=$(echo "${DEPLOY_INIT_MINIMAL}" | tr '[:upper:]' '[:lower:]')
               if [ "$DEPLOY_RESOURCE" = "true" ]; then
                 if [ -d "/home/ubuntu/${PROJECT_NAME}" ]; then
-                  echo "INFO: Running npm build and deploy for ${PROJECT_NAME}"
-                  if sudo -u ubuntu bash -c 'export HOME=/home/ubuntu && cd $HOME && source ~/.bashrc && export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" && cd '"${PROJECT_NAME}"' && npm ci && npm run bootstrap && npm run build && npm run deploy'; then
-                    echo "INFO: npm build and deploy completed successfully"
+                  if [ "$DEPLOY_INIT_MINIMAL" = "true" ]; then
+                    echo "INFO: Running npm build and deploy:init-minimal for ${PROJECT_NAME}"
+                    if sudo -u ubuntu bash -c 'export HOME=/home/ubuntu && cd $HOME && source ~/.bashrc && export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" && cd '"${PROJECT_NAME}"' && npm ci && npm run bootstrap && npm run build && npm run deploy:init-minimal'; then
+                      echo "INFO: npm build and deploy:init-minimal completed successfully"
+                    else
+                      echo "ERROR: npm build and deploy:init-minimal failed with exit code $?"
+                    fi
                   else
-                    echo "ERROR: npm build and deploy failed with exit code $?"
+                    echo "INFO: Running npm build and deploy for ${PROJECT_NAME}"
+                    if sudo -u ubuntu bash -c 'export HOME=/home/ubuntu && cd $HOME && source ~/.bashrc && export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" && cd '"${PROJECT_NAME}"' && npm ci && npm run bootstrap && npm run build && npm run deploy'; then
+                      echo "INFO: npm build and deploy completed successfully"
+                    else
+                      echo "ERROR: npm build and deploy failed with exit code $?"
+                    fi
                   fi
                 else
                   echo "INFO: ${PROJECT_NAME} directory not found, skipping npm build and deploy"
@@ -938,6 +957,7 @@ Resources:
               S3_BUCKET_NAME: !GetAtt SageMakerModelsS3Bucket.BucketName
               PROJECT_NAME: !Ref ProjectName
               DEPLOY_PROJECT_RESOURCE: !Ref DeployProjectResource
+              DEPLOY_INIT_MINIMAL: !Ref DeployInitMinimal
               AWS_ACCESS_KEY_ID: !Ref AWSAccessKeyId
               AWS_SECRET_ACCESS_KEY: !Ref AWSSecretAccessKey
               REGION: !Ref AWS::Region
