@@ -338,7 +338,6 @@ Resources:
   S3BucketManagementLambda:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub '${AWS::StackName}-S3BucketManagement'
       Runtime: python3.12
       Handler: index.handler
       Role: !GetAtt S3BucketManagementLambdaRole.Arn
@@ -498,7 +497,6 @@ Resources:
   AZSelectionLambda:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub '${AWS::StackName}-AZSelection'
       Runtime: python3.12
       Handler: index.handler
       Role: !GetAtt AZSelectionLambdaRole.Arn
