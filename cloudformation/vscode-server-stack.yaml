@@ -493,6 +493,15 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: EC2DescribePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeInstanceTypeOfferings
+                Resource: '*'
 
   AZSelectionLambda:
     Type: AWS::Lambda::Function
@@ -503,6 +512,7 @@ Resources:
       Timeout: 30
       Code:
         ZipFile: |
+          import boto3
           import cfnresponse
           import logging
 
@@ -515,30 +525,75 @@ Resources:
               try:
                   if event['RequestType'] in ['Create', 'Update']:
                       stack_id = event['StackId']
+                      region = event['ResourceProperties']['Region']
+                      instance_type = event['ResourceProperties']['InstanceType']
                       az_param = event['ResourceProperties']['AvailabilityZoneParam']
                       subnet_a = event['ResourceProperties']['SubnetA']
                       subnet_b = event['ResourceProperties']['SubnetB']
                       subnet_c = event['ResourceProperties']['SubnetC']
                       subnet_d = event['ResourceProperties']['SubnetD']
 
-                      # Determine AZ suffix
+                      # Create EC2 client
+                      ec2_client = boto3.client('ec2', region_name=region)
+
+                      # Get available AZs for the instance type
+                      logger.info(f'Checking availability for instance type: {instance_type} in region: {region}')
+                      response = ec2_client.describe_instance_type_offerings(
+                          LocationType='availability-zone',
+                          Filters=[
+                              {
+                                  'Name': 'instance-type',
+                                  'Values': [instance_type]
+                              }
+                          ]
+                      )
+
+                      # Extract AZ suffixes (a, b, c, d) from available AZs
+                      available_azs = []
+                      for offering in response['InstanceTypeOfferings']:
+                          az = offering['Location']
+                          # Extract suffix (e.g., 'us-east-1a' -> 'a')
+                          az_suffix = az[-1]
+                          if az_suffix in ['a', 'b', 'c', 'd']:
+                              available_azs.append(az_suffix)
+
+                      logger.info(f'Available AZs for {instance_type}: {available_azs}')
+
+                      if not available_azs:
+                          raise Exception(f'No availability zones found for instance type {instance_type} in region {region}')
+
+                      # Determine AZ suffix based on mode
                       if az_param == 'auto':
-                          # Extract guid from StackId (format: arn:aws:cloudformation:region:account:stack/name/guid)
+                          # Extract guid from StackId for deterministic selection
                           guid = stack_id.split('/')[-1]
-                          # Use first character of guid to determine AZ (0-3 -> a, 4-7 -> b, 8-b -> c, c-f -> d)
                           first_char = guid[0].lower()
+
+                          # Preferred AZ based on guid
                           if first_char in '0123':
-                              az_suffix = 'a'
+                              preferred_az = 'a'
                           elif first_char in '4567':
-                              az_suffix = 'b'
+                              preferred_az = 'b'
                           elif first_char in '89ab':
-                              az_suffix = 'c'
-                          else:  # c-f
-                              az_suffix = 'd'
-                          logger.info(f'Auto mode - StackId: {stack_id}, GUID: {guid}, First char: {first_char}, AZ: {az_suffix}')
+                              preferred_az = 'c'
+                          else:
+                              preferred_az = 'd'
+
+                          # Use preferred AZ if available, otherwise use first available
+                          if preferred_az in available_azs:
+                              az_suffix = preferred_az
+                              logger.info(f'Auto mode - Using preferred AZ: {az_suffix} (based on StackId: {stack_id})')
+                          else:
+                              az_suffix = available_azs[0]
+                              logger.info(f'Auto mode - Preferred AZ {preferred_az} not available, using first available: {az_suffix}')
                       else:
-                          az_suffix = az_param
-                          logger.info(f'Manual mode - AZ: {az_suffix}')
+                          # Manual mode - verify the specified AZ is available
+                          if az_param in available_azs:
+                              az_suffix = az_param
+                              logger.info(f'Manual mode - Using specified AZ: {az_suffix}')
+                          else:
+                              # Fallback to first available AZ
+                              az_suffix = available_azs[0]
+                              logger.warning(f'Manual mode - Specified AZ {az_param} not available for {instance_type}, falling back to: {az_suffix}')
 
                       # Select subnet based on AZ
                       subnet_map = {
@@ -569,6 +624,8 @@ Resources:
       - VSCodeServerPublicSubnetD
     Properties:
       ServiceToken: !GetAtt AZSelectionLambda.Arn
+      Region: !Ref AWS::Region
+      InstanceType: !Ref InstanceType
       AvailabilityZoneParam: !Ref AvailabilityZone
       SubnetA: !Ref VSCodeServerPublicSubnetA
       SubnetB: !Ref VSCodeServerPublicSubnetB
