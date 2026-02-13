@@ -80,6 +80,15 @@ Parameters:
       - "true"
       - "False"
       - "false"
+  DeployInitMinimal:
+    Type: String
+    Description: Whether to deploy minimal initialization resources (True/False)
+    Default: "False"
+    AllowedValues:
+      - "True"
+      - "true"
+      - "False"
+      - "false"
   AvailabilityZone:
     Type: String
     Description: Availability Zone for EC2 instance (a, b, c, d, or auto for StackId-based selection)
@@ -100,15 +109,11 @@ Parameters:
     Description: AWS Secret Access Key for AWS CLI configuration (leave empty to skip)
     Default: ""
     NoEcho: true
-  DeployInitMinimal:
+  AWSBearerTokenBedrock:
     Type: String
-    Description: Whether to deploy minimal initialization resources (True/False)
-    Default: "False"
-    AllowedValues:
-      - "True"
-      - "true"
-      - "False"
-      - "false"
+    Description: AWS Bearer Token for Bedrock authentication (leave empty to skip)
+    Default: ""
+    NoEcho: true
 #------------------------------------------------------
 # VPC and Network Resources
 #------------------------------------------------------
@@ -946,10 +951,20 @@ Resources:
 
                 # Configure VSCode Server environemnts, including Python 3.12, Node.js 22, Claude Code and Amazon Q
                 echo "INFO: Configuring VSCode Server environment"
-                if sudo -i -u ubuntu bash -c "cd /home/ubuntu/${PROJECT_NAME} && ./configure-vscode-server.sh"; then
-                  echo "INFO: VSCode Server configuration completed successfully"
+                if [ -n "${AWS_BEARER_TOKEN_BEDROCK}" ] && [ "${AWS_BEARER_TOKEN_BEDROCK}" != "" ]; then
+                  echo "INFO: AWS Bearer Token for Bedrock provided, configuring with token"
+                  if sudo -i -u ubuntu bash -c "cd /home/ubuntu/${PROJECT_NAME} && ./configure-vscode-server.sh --aws-bearer-token-bedrok ${AWS_BEARER_TOKEN_BEDROCK}"; then
+                    echo "INFO: VSCode Server configuration completed successfully"
+                  else
+                    echo "ERROR: VSCode Server configuration failed with exit code $?"
+                  fi
                 else
-                  echo "ERROR: VSCode Server configuration failed with exit code $?"
+                  echo "INFO: No AWS Bearer Token for Bedrock provided, configuring without token"
+                  if sudo -i -u ubuntu bash -c "cd /home/ubuntu/${PROJECT_NAME} && ./configure-vscode-server.sh"; then
+                    echo "INFO: VSCode Server configuration completed successfully"
+                  else
+                    echo "ERROR: VSCode Server configuration failed with exit code $?"
+                  fi
                 fi
               else
                 echo "INFO: No GitHub access token provided, skipping repository clone"
@@ -1015,6 +1030,7 @@ Resources:
               DEPLOY_INIT_MINIMAL: !Ref DeployInitMinimal
               AWS_ACCESS_KEY_ID: !Ref AWSAccessKeyId
               AWS_SECRET_ACCESS_KEY: !Ref AWSSecretAccessKey
+              AWS_BEARER_TOKEN_BEDROCK: !Ref AWSBearerTokenBedrock
               REGION: !Ref AWS::Region
 #------------------------------------------------------
 # CloudFront Cached Policy
