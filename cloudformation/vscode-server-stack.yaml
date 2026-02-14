@@ -758,8 +758,8 @@ Resources:
   VSCodeServerStartRule:
     Type: AWS::Events::Rule
     Properties:
-      Description: Start VSCode Server at 8:30 AM KST on weekdays (11:30 PM UTC previous day, Sun-Thu). Manually disable 2026-02-28 to 2026-03-01 to skip 2026-03-01 and 2026-03-02.
-      ScheduleExpression: "cron(30 23 ? * SUN-THU *)"
+      Description: Start VSCode Server at 8:00 AM KST every day (11:00 PM UTC previous day). Manually disable 2026-02-28 to 2026-03-01 to skip 2026-03-01 and 2026-03-02.
+      ScheduleExpression: "cron(0 23 ? * * *)"
       State: ENABLED
       Targets:
         - Arn: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:automation-definition/AWS-StartEC2Instance"
@@ -774,8 +774,8 @@ Resources:
   VSCodeServerStopRule:
     Type: AWS::Events::Rule
     Properties:
-      Description: Stop VSCode Server at 8:00 PM KST on weekdays (11:00 AM UTC, Mon-Fri)
-      ScheduleExpression: "cron(0 11 ? * MON-FRI *)"
+      Description: Stop VSCode Server at 8:00 PM KST every day (11:00 AM UTC)
+      ScheduleExpression: "cron(0 11 ? * * *)"
       State: ENABLED
       Targets:
         - Arn: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:automation-definition/AWS-StopEC2Instance"
