@@ -36,12 +36,28 @@ export REMOTE_SSH_PUBLIC_KEY=$(cat ~/.ssh/vscode-remote-ssh.pub)
 
 배포 스크립트는 S3 버킷을 자동으로 생성하고 관리합니다.
 
+#### 배포 파라미터
+
+| 파라미터 | 환경변수 | 커맨드라인 옵션 | 기본값 | 설명 |
+|---------|---------|----------------|--------|------|
+| 프로젝트 이름 | PROJECT_NAME | --project-name | ax-on-mastery | 배포할 프로젝트 이름 |
+| 인스턴스 타입 | INSTANCE_TYPE | --instance-type | m5.2xlarge | EC2 인스턴스 타입 |
+| VSCode 버전 | VSCODE_SERVER_VERSION | --vscode-server-version | 4.109.2 | VSCode Server 버전 |
+| 프로젝트 배포 | DEPLOY_PROJECT_RESOURCE | --deploy-project-resource | True | 프로젝트 리소스 배포 여부 |
+| 최소 초기화 | DEPLOY_INIT_MINIMAL | --deploy-init-minimal | False | 최소 초기화 배포 여부 |
+
 **간단한 버전 (환경변수 사용)**:
 ```bash
 # 환경 변수 설정
 export GITHUB_TOKEN=<YOUR_GITHUB_PAT>
 export REMOTE_SSH_PUBLIC_KEY=$(cat ~/.ssh/vscode-remote-ssh.pub)
-export PROJECT_NAME=my-project  # 선택사항, 기본값: ax-on-mastery
+
+# 선택사항: 기본값을 변경하려면 아래 환경변수 설정
+export PROJECT_NAME=my-project              # 기본값: ax-on-mastery
+export INSTANCE_TYPE=m5.2xlarge             # 기본값: m5.2xlarge
+export VSCODE_SERVER_VERSION=4.109.2        # 기본값: 4.109.2
+export DEPLOY_PROJECT_RESOURCE=True         # 기본값: True
+export DEPLOY_INIT_MINIMAL=False            # 기본값: False
 
 # 스크립트 다운로드 및 실행
 curl -sL https://raw.githubusercontent.com/shkim4u/vscode-server/main/deploy-simple.sh | bash
@@ -56,10 +72,52 @@ export REMOTE_SSH_PUBLIC_KEY=$(cat ~/.ssh/vscode-remote-ssh.pub)
 # 스크립트 다운로드 및 실행
 curl -sL https://raw.githubusercontent.com/shkim4u/vscode-server/main/deploy.sh -o deploy.sh
 chmod +x deploy.sh
-./deploy.sh --project-name my-project  # 프로젝트 이름 지정 (선택사항)
+
+# 기본값으로 배포
+./deploy.sh
+
+# 커스텀 설정으로 배포
+./deploy.sh \
+  --project-name my-project \
+  --instance-type m5.2xlarge \
+  --vscode-server-version 4.109.2 \
+  --deploy-project-resource True \
+  --deploy-init-minimal False
 
 # 도움말 보기
 ./deploy.sh --help
+```
+
+#### 사용 예시
+
+**예시 1: GPU 인스턴스로 배포**
+```bash
+export GITHUB_TOKEN=<YOUR_GITHUB_PAT>
+export REMOTE_SSH_PUBLIC_KEY=$(cat ~/.ssh/vscode-remote-ssh.pub)
+
+./deploy.sh \
+  --instance-type g5.12xlarge \
+  --project-name my-ml-project
+```
+
+**예시 2: 최소 초기화로 빠른 배포**
+```bash
+export GITHUB_TOKEN=<YOUR_GITHUB_PAT>
+export REMOTE_SSH_PUBLIC_KEY=$(cat ~/.ssh/vscode-remote-ssh.pub)
+
+./deploy.sh \
+  --deploy-init-minimal True \
+  --deploy-project-resource False
+```
+
+**예시 3: 환경변수로 간단하게**
+```bash
+export GITHUB_TOKEN=<YOUR_GITHUB_PAT>
+export REMOTE_SSH_PUBLIC_KEY=$(cat ~/.ssh/vscode-remote-ssh.pub)
+export INSTANCE_TYPE=t3.xlarge
+export PROJECT_NAME=test-project
+
+curl -sL https://raw.githubusercontent.com/shkim4u/vscode-server/main/deploy-simple.sh | bash
 ```
 
 ### 방법 2: 수동 배포 (S3 버킷 지정)

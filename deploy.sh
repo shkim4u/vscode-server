@@ -7,6 +7,10 @@ set -e
 
 # Default values
 PROJECT_NAME="ax-on-mastery"
+INSTANCE_TYPE="m5.2xlarge"
+VSCODE_SERVER_VERSION="4.109.2"
+DEPLOY_PROJECT_RESOURCE="True"
+DEPLOY_INIT_MINIMAL="False"
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -15,12 +19,32 @@ while [[ $# -gt 0 ]]; do
       PROJECT_NAME="$2"
       shift 2
       ;;
+    --instance-type)
+      INSTANCE_TYPE="$2"
+      shift 2
+      ;;
+    --vscode-server-version)
+      VSCODE_SERVER_VERSION="$2"
+      shift 2
+      ;;
+    --deploy-project-resource)
+      DEPLOY_PROJECT_RESOURCE="$2"
+      shift 2
+      ;;
+    --deploy-init-minimal)
+      DEPLOY_INIT_MINIMAL="$2"
+      shift 2
+      ;;
     --help|-h)
       echo "Usage: $0 [OPTIONS]"
       echo ""
       echo "Options:"
-      echo "  --project-name NAME    Project name (default: ax-on-mastery)"
-      echo "  --help, -h             Show this help message"
+      echo "  --project-name NAME              Project name (default: ax-on-mastery)"
+      echo "  --instance-type TYPE             EC2 instance type (default: m5.2xlarge)"
+      echo "  --vscode-server-version VERSION  VSCode Server version (default: 4.109.2)"
+      echo "  --deploy-project-resource BOOL   Deploy project resources (default: True)"
+      echo "  --deploy-init-minimal BOOL       Deploy minimal initialization (default: False)"
+      echo "  --help, -h                       Show this help message"
       echo ""
       echo "Environment variables required:"
       echo "  GITHUB_TOKEN           GitHub Personal Access Token"
@@ -51,6 +75,10 @@ echo "=========================================="
 echo "Account ID: ${ACCOUNT_ID}"
 echo "Region: ${REGION}"
 echo "Project Name: ${PROJECT_NAME}"
+echo "Instance Type: ${INSTANCE_TYPE}"
+echo "VSCode Server Version: ${VSCODE_SERVER_VERSION}"
+echo "Deploy Project Resource: ${DEPLOY_PROJECT_RESOURCE}"
+echo "Deploy Init Minimal: ${DEPLOY_INIT_MINIMAL}"
 echo "S3 Bucket: ${S3_BUCKET_NAME}"
 echo "=========================================="
 
@@ -111,13 +139,13 @@ aws cloudformation deploy \
     --s3-bucket "${S3_BUCKET_NAME}" \
     --s3-prefix cloudformation-templates \
     --parameter-overrides \
-      InstanceType=m5.2xlarge \
-      VSCodeServerVersion=4.108.1 \
+      InstanceType="${INSTANCE_TYPE}" \
+      VSCodeServerVersion="${VSCODE_SERVER_VERSION}" \
       GitHubAccessToken="${GITHUB_TOKEN}" \
       RemoteSSHPublicKey="${REMOTE_SSH_PUBLIC_KEY}" \
       ProjectName="${PROJECT_NAME}" \
-      DeployProjectResource="True" \
-      DeployInitMinimal="True" \
+      DeployProjectResource="${DEPLOY_PROJECT_RESOURCE}" \
+      DeployInitMinimal="${DEPLOY_INIT_MINIMAL}" \
       AWSAccessKeyId="${AWS_ACCESS_KEY_ID}" \
       AWSSecretAccessKey="${AWS_SECRET_ACCESS_KEY}" \
       AWSBearerTokenBedrock="${AWS_BEARER_TOKEN_BEDROCK}" \
