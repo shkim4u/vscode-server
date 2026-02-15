@@ -749,6 +749,237 @@ Resources:
                   StringEquals:
                     iam:PassedToService: ssm.amazonaws.com
 #------------------------------------------------------
+# Lambda Role for Conditional Stop
+#------------------------------------------------------
+  ConditionalStopLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: ConditionalStopPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeInstances
+                  - ec2:DescribeTags
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ssm:StartAutomationExecution
+                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:automation-definition/AWS-StopEC2Instance:*"
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource: !GetAtt EventBridgeSchedulerRole.Arn
+
+  ConditionalStopLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt ConditionalStopLambdaRole.Arn
+      Timeout: 60
+      Environment:
+        Variables:
+          INSTANCE_ID: !Ref VSCodeServer
+          AUTOMATION_ROLE_ARN: !GetAtt EventBridgeSchedulerRole.Arn
+          REGION: !Ref AWS::Region
+      Code:
+        ZipFile: |
+          import boto3
+          import os
+          import logging
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          def handler(event, context):
+              instance_id = os.environ['INSTANCE_ID']
+              automation_role_arn = os.environ['AUTOMATION_ROLE_ARN']
+              region = os.environ['REGION']
+
+              ec2_client = boto3.client('ec2', region_name=region)
+              ssm_client = boto3.client('ssm', region_name=region)
+
+              logger.info(f'Checking AutoStop tag for instance: {instance_id}')
+
+              try:
+                  # Get instance tags
+                  response = ec2_client.describe_instances(InstanceIds=[instance_id])
+                  if not response['Reservations']:
+                      logger.warning(f'Instance {instance_id} not found')
+                      return {'statusCode': 404, 'body': 'Instance not found'}
+
+                  instance = response['Reservations'][0]['Instances'][0]
+                  tags = {tag['Key']: tag['Value'] for tag in instance.get('Tags', [])}
+
+                  # Check AutoStop tag
+                  auto_stop = tags.get('AutoStop', 'enabled').lower()
+
+                  if auto_stop == 'disabled':
+                      logger.info(f'AutoStop is disabled for instance {instance_id}. Skipping stop.')
+                      return {
+                          'statusCode': 200,
+                          'body': f'AutoStop disabled for instance {instance_id}. Stop skipped.'
+                      }
+
+                  # Check instance state
+                  state = instance['State']['Name']
+                  if state != 'running':
+                      logger.info(f'Instance {instance_id} is in {state} state. Skipping stop.')
+                      return {
+                          'statusCode': 200,
+                          'body': f'Instance {instance_id} is {state}. Stop skipped.'
+                      }
+
+                  # Stop instance via SSM Automation
+                  logger.info(f'Stopping instance {instance_id} via SSM Automation')
+                  ssm_response = ssm_client.start_automation_execution(
+                      DocumentName='AWS-StopEC2Instance',
+                      Parameters={
+                          'InstanceId': [instance_id],
+                          'AutomationAssumeRole': [automation_role_arn]
+                      }
+                  )
+
+                  execution_id = ssm_response['AutomationExecutionId']
+                  logger.info(f'Started SSM Automation execution: {execution_id}')
+
+                  return {
+                      'statusCode': 200,
+                      'body': f'Instance {instance_id} stop initiated. Execution ID: {execution_id}'
+                  }
+
+              except Exception as e:
+                  logger.error(f'Error: {str(e)}')
+                  raise
+
+  ConditionalStartLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: ConditionalStartPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeInstances
+                  - ec2:DescribeTags
+                  - ec2:CreateTags
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ssm:StartAutomationExecution
+                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:automation-definition/AWS-StartEC2Instance:*"
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource: !GetAtt EventBridgeSchedulerRole.Arn
+
+  ConditionalStartLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt ConditionalStartLambdaRole.Arn
+      Timeout: 60
+      Environment:
+        Variables:
+          INSTANCE_ID: !Ref VSCodeServer
+          AUTOMATION_ROLE_ARN: !GetAtt EventBridgeSchedulerRole.Arn
+          REGION: !Ref AWS::Region
+      Code:
+        ZipFile: |
+          import boto3
+          import os
+          import logging
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          def handler(event, context):
+              instance_id = os.environ['INSTANCE_ID']
+              automation_role_arn = os.environ['AUTOMATION_ROLE_ARN']
+              region = os.environ['REGION']
+
+              ec2_client = boto3.client('ec2', region_name=region)
+              ssm_client = boto3.client('ssm', region_name=region)
+
+              logger.info(f'Starting scheduled start process for instance: {instance_id}')
+
+              try:
+                  # Get instance tags and state
+                  response = ec2_client.describe_instances(InstanceIds=[instance_id])
+                  if not response['Reservations']:
+                      logger.warning(f'Instance {instance_id} not found')
+                      return {'statusCode': 404, 'body': 'Instance not found'}
+
+                  instance = response['Reservations'][0]['Instances'][0]
+                  tags = {tag['Key']: tag['Value'] for tag in instance.get('Tags', [])}
+                  state = instance['State']['Name']
+
+                  # Check AutoStop tag
+                  auto_stop = tags.get('AutoStop', 'enabled').lower()
+
+                  # Always reset AutoStop to enabled on morning start
+                  if auto_stop == 'disabled':
+                      logger.info(f'Resetting AutoStop tag from disabled to enabled for instance {instance_id}')
+                      ec2_client.create_tags(
+                          Resources=[instance_id],
+                          Tags=[{'Key': 'AutoStop', 'Value': 'enabled'}]
+                      )
+                      logger.info(f'AutoStop tag reset to enabled')
+
+                  # Start instance if it's not running
+                  if state == 'running':
+                      logger.info(f'Instance {instance_id} is already running. No action needed.')
+                      return {
+                          'statusCode': 200,
+                          'body': f'Instance {instance_id} is already running. AutoStop tag reset to enabled.'
+                      }
+
+                  # Start instance via SSM Automation
+                  logger.info(f'Starting instance {instance_id} via SSM Automation')
+                  ssm_response = ssm_client.start_automation_execution(
+                      DocumentName='AWS-StartEC2Instance',
+                      Parameters={
+                          'InstanceId': [instance_id],
+                          'AutomationAssumeRole': [automation_role_arn]
+                      }
+                  )
+
+                  execution_id = ssm_response['AutomationExecutionId']
+                  logger.info(f'Started SSM Automation execution: {execution_id}')
+
+                  return {
+                      'statusCode': 200,
+                      'body': f'Instance {instance_id} start initiated. Execution ID: {execution_id}'
+                  }
+
+              except Exception as e:
+                  logger.error(f'Error: {str(e)}')
+                  raise
+#------------------------------------------------------
 # EventBridge Rules for Instance Scheduling (Weekdays Only)
 # NOTE: To exclude 2026-03-01 and 2026-03-02:
 #   - Disable this rule on 2026-02-28 (to skip 2026-03-01 8:30 AM KST start)
@@ -758,34 +989,38 @@ Resources:
   VSCodeServerStartRule:
     Type: AWS::Events::Rule
     Properties:
-      Description: Start VSCode Server at 8:00 AM KST every day (11:00 PM UTC previous day). Manually disable 2026-02-28 to 2026-03-01 to skip 2026-03-01 and 2026-03-02.
+      Description: Start VSCode Server at 8:00 AM KST every day (11:00 PM UTC previous day). Automatically resets AutoStop tag to enabled.
       ScheduleExpression: "cron(0 23 ? * * *)"
       State: ENABLED
       Targets:
-        - Arn: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:automation-definition/AWS-StartEC2Instance"
-          RoleArn: !GetAtt EventBridgeSchedulerRole.Arn
-          Id: StartVSCodeServerInstance
-          Input: !Sub |
-            {
-              "InstanceId": ["${VSCodeServer}"],
-              "AutomationAssumeRole": ["${EventBridgeSchedulerRole.Arn}"]
-            }
+        - Arn: !GetAtt ConditionalStartLambda.Arn
+          Id: ConditionalStartVSCodeServerInstance
+
+  ConditionalStartLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ConditionalStartLambda
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt VSCodeServerStartRule.Arn
 
   VSCodeServerStopRule:
     Type: AWS::Events::Rule
     Properties:
-      Description: Stop VSCode Server at 8:00 PM KST every day (11:00 AM UTC)
+      Description: Stop VSCode Server at 8:00 PM KST every day (11:00 AM UTC). Can be overridden by setting EC2 tag AutoStop=disabled
       ScheduleExpression: "cron(0 11 ? * * *)"
       State: ENABLED
       Targets:
-        - Arn: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:automation-definition/AWS-StopEC2Instance"
-          RoleArn: !GetAtt EventBridgeSchedulerRole.Arn
-          Id: StopVSCodeServerInstance
-          Input: !Sub |
-            {
-              "InstanceId": ["${VSCodeServer}"],
-              "AutomationAssumeRole": ["${EventBridgeSchedulerRole.Arn}"]
-            }
+        - Arn: !GetAtt ConditionalStopLambda.Arn
+          Id: ConditionalStopVSCodeServerInstance
+
+  ConditionalStopLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ConditionalStopLambda
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt VSCodeServerStopRule.Arn
 #------------------------------------------------------
 # Elastic IP for EC2 Instance
 #------------------------------------------------------
@@ -827,6 +1062,8 @@ Resources:
       Tags:
         - Key: Name
           Value: VSCodeServer
+        - Key: AutoStop
+          Value: enabled
       NetworkInterfaces:
         - DeviceIndex: "0"
           AssociatePublicIpAddress: "true"
@@ -1131,3 +1368,8 @@ Outputs:
     Value: "/code-server/password"
     Export:
       Name: !Sub ${AWS::StackName}-code-server-password-ssm
+  AutoStopOverrideInstructions:
+    Description: To override auto-stop for the day, set AutoStop=disabled. It will be automatically reset to enabled at 8:00 AM KST next day.
+    Value: !Sub
+      - "To disable auto-stop: aws ec2 create-tags --resources ${InstanceId} --tags Key=AutoStop,Value=disabled | Tag will be automatically reset to enabled at 8:00 AM KST"
+      - InstanceId: !Ref VSCodeServer
