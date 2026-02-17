@@ -1257,6 +1257,18 @@ Resources:
                 echo "INFO: DeployProjectResource is false, skipping npm build and deploy"
               fi
 
+              # Execute post-configuration script if exists
+              if [ -f "/home/ubuntu/${PROJECT_NAME}/post-configure-vscode-server.sh" ]; then
+                echo "INFO: Executing post-configuration script"
+                if sudo -i -u ubuntu bash -c "cd /home/ubuntu/${PROJECT_NAME} && ./post-configure-vscode-server.sh"; then
+                  echo "INFO: Post-configuration script completed successfully"
+                else
+                  echo "ERROR: Post-configuration script failed with exit code $?"
+                fi
+              else
+                echo "INFO: Post-configuration script not found, skipping"
+              fi
+
               echo "INFO: UserData script execution finished"
             - VERSION: !Ref VSCodeServerVersion
               GITHUB_TOKEN: !Ref GitHubAccessToken
