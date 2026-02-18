@@ -11,6 +11,7 @@ INSTANCE_TYPE="m5.2xlarge"
 VSCODE_SERVER_VERSION="4.109.2"
 DEPLOY_PROJECT_RESOURCE="True"
 DEPLOY_INIT_MINIMAL="False"
+STACK_NAME="VSCodeServerStack"
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -35,6 +36,10 @@ while [[ $# -gt 0 ]]; do
       DEPLOY_INIT_MINIMAL="$2"
       shift 2
       ;;
+    --stack-name)
+      STACK_NAME="$2"
+      shift 2
+      ;;
     --help|-h)
       echo "Usage: $0 [OPTIONS]"
       echo ""
@@ -44,6 +49,7 @@ while [[ $# -gt 0 ]]; do
       echo "  --vscode-server-version VERSION  VSCode Server version (default: 4.109.2)"
       echo "  --deploy-project-resource BOOL   Deploy project resources (default: True)"
       echo "  --deploy-init-minimal BOOL       Deploy minimal initialization (default: False)"
+      echo "  --stack-name NAME                CloudFormation stack name (default: VSCodeServerStack)"
       echo "  --help, -h                       Show this help message"
       echo ""
       echo "Environment variables required:"
@@ -74,6 +80,7 @@ echo "VSCode Server Stack Deployment"
 echo "=========================================="
 echo "Account ID: ${ACCOUNT_ID}"
 echo "Region: ${REGION}"
+echo "Stack Name: ${STACK_NAME}"
 echo "Project Name: ${PROJECT_NAME}"
 echo "Instance Type: ${INSTANCE_TYPE}"
 echo "VSCode Server Version: ${VSCODE_SERVER_VERSION}"
@@ -134,7 +141,7 @@ echo "=========================================="
 
 # Deploy stack
 aws cloudformation deploy \
-    --stack-name VSCodeServerStack \
+    --stack-name "${STACK_NAME}" \
     --template-file /tmp/vscode-server-stack.yaml \
     --s3-bucket "${S3_BUCKET_NAME}" \
     --s3-prefix cloudformation-templates \
@@ -159,7 +166,7 @@ echo "=========================================="
 # Get stack outputs
 echo "Stack Outputs:"
 aws cloudformation describe-stacks \
-    --stack-name VSCodeServerStack \
+    --stack-name "${STACK_NAME}" \
     --region "${REGION}" \
     --query 'Stacks[0].Outputs[*].[OutputKey,OutputValue]' \
     --output table
@@ -168,8 +175,9 @@ echo "🔎 Retrieving VSCode Server CloudFront Domain Name..."
 
 # VSCodeServerCloudFrontDomainName 값 조회
 VSCODE_SERVER_CLOUDFRONT_DOMAIN_NAME=$(aws cloudformation describe-stacks \
-  --stack-name "$STACK_NAME" \
+  --stack-name "${STACK_NAME}" \
   --query "Stacks[0].Outputs[?OutputKey=='VSCodeServerCloudFrontDomainName'].OutputValue" \
+  --region "${REGION}" \
   --output text)
 
 echo "🏡 VSCode Server CloudFront Domain Name: "
@@ -177,7 +185,7 @@ echo "$VSCODE_SERVER_CLOUDFRONT_DOMAIN_NAME"
 
 # PASSWORD_SSM 값 조회
 PASSWORD_SSM=$(aws cloudformation describe-stacks \
-  --stack-name VSCodeServerStack \
+  --stack-name "${STACK_NAME}" \
   --query "Stacks[0].Outputs[?OutputKey=='VSCodeServerPasswordSSM'].OutputValue" \
   --region "${REGION}" \
   --output text)
