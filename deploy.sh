@@ -164,6 +164,17 @@ aws cloudformation describe-stacks \
     --query 'Stacks[0].Outputs[*].[OutputKey,OutputValue]' \
     --output table
 
+echo "🔎 Retrieving VSCode Server CloudFront Domain Name..."
+
+# VSCodeServerCloudFrontDomainName 값 조회
+VSCODE_SERVER_CLOUDFRONT_DOMAIN_NAME=$(aws cloudformation describe-stacks \
+  --stack-name "$STACK_NAME" \
+  --query "Stacks[0].Outputs[?OutputKey=='VSCodeServerCloudFrontDomainName'].OutputValue" \
+  --output text)
+
+echo "🏡 VSCode Server CloudFront Domain Name: "
+echo "$VSCODE_SERVER_CLOUDFRONT_DOMAIN_NAME"
+
 # PASSWORD_SSM 값 조회
 PASSWORD_SSM=$(aws cloudformation describe-stacks \
   --stack-name VSCodeServerStack \
@@ -171,7 +182,7 @@ PASSWORD_SSM=$(aws cloudformation describe-stacks \
   --region "${REGION}" \
   --output text)
 
-echo "Retrieving password from Parameter Store: $PASSWORD_SSM"
+echo "🔎 Retrieving password from Parameter Store: $PASSWORD_SSM"
 PASSWORD=$(aws ssm get-parameter \
   --name "$PASSWORD_SSM" \
   --with-decryption \
@@ -179,10 +190,12 @@ PASSWORD=$(aws ssm get-parameter \
   --region "${REGION}" \
   --output text 2>/dev/null)
 
+
+
 if [ $? -eq 0 ] && [ -n "$PASSWORD" ]; then
   echo ""
   echo "🚨 (주의) 아래 실습 환경 접속을 위한 액세스 코드는 유출되지 않도록 각별히 유의해 주시기 바랍니다!"
-  echo "VSCode Server Access Code: $PASSWORD"
+  echo "🔑 VSCode Server Access Code: $PASSWORD"
 else
   echo "Error: Failed to retrieve password from Parameter Store"
   echo "Parameter name: $PASSWORD_SSM"
