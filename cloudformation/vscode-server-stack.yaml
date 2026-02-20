@@ -776,7 +776,9 @@ Resources:
               - Effect: Allow
                 Action:
                   - ssm:StartAutomationExecution
-                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:automation-definition/AWS-StopEC2Instance:*"
+                Resource:
+                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:automation-definition/AWS-StopEC2Instance:*"
+                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:automation-execution/*"
               - Effect: Allow
                 Action:
                   - iam:PassRole
@@ -890,7 +892,9 @@ Resources:
               - Effect: Allow
                 Action:
                   - ssm:StartAutomationExecution
-                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:automation-definition/AWS-StartEC2Instance:*"
+                Resource:
+                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:automation-definition/AWS-StartEC2Instance:*"
+                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:automation-execution/*"
               - Effect: Allow
                 Action:
                   - iam:PassRole
