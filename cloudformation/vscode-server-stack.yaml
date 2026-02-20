@@ -777,6 +777,7 @@ Resources:
                 Action:
                   - ssm:StartAutomationExecution
                 Resource:
+                  - !Sub "arn:aws:ssm:${AWS::Region}::document/AWS-StopEC2Instance"
                   - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:automation-definition/AWS-StopEC2Instance:*"
                   - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:automation-execution/*"
               - Effect: Allow
@@ -893,6 +894,7 @@ Resources:
                 Action:
                   - ssm:StartAutomationExecution
                 Resource:
+                  - !Sub "arn:aws:ssm:${AWS::Region}::document/AWS-StartEC2Instance"
                   - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:automation-definition/AWS-StartEC2Instance:*"
                   - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:automation-execution/*"
               - Effect: Allow
