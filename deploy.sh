@@ -156,6 +156,7 @@ aws cloudformation deploy \
       AWSAccessKeyId="${AWS_ACCESS_KEY_ID}" \
       AWSSecretAccessKey="${AWS_SECRET_ACCESS_KEY}" \
       AWSBearerTokenBedrock="${AWS_BEARER_TOKEN_BEDROCK}" \
+      OpenAIAPIKey="${OPENAI_API_KEY}" \
     --capabilities CAPABILITY_IAM \
     --region "${REGION}"
 
