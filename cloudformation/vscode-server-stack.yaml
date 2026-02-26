@@ -1205,12 +1205,12 @@ Resources:
 
                 if [ -n "${AWS_BEARER_TOKEN_BEDROCK}" ] && [ "${AWS_BEARER_TOKEN_BEDROCK}" != "" ]; then
                   echo "INFO: AWS Bearer Token for Bedrock provided, adding to configuration"
-                  CONFIG_CMD="$${CONFIG_CMD} --aws-bearer-token-bedrock ${AWS_BEARER_TOKEN_BEDROCK}"
+                  export CONFIG_CMD="$${CONFIG_CMD} --aws-bearer-token-bedrock ${AWS_BEARER_TOKEN_BEDROCK}"
                 fi
 
                 if [ -n "${OPENAI_API_KEY}" ] && [ "${OPENAI_API_KEY}" != "" ]; then
                   echo "INFO: OpenAI API Key provided, adding to configuration"
-                  CONFIG_CMD="$${CONFIG_CMD} --openai-api-key ${OPENAI_API_KEY}"
+                  export CONFIG_CMD="$${CONFIG_CMD} --openai-api-key ${OPENAI_API_KEY}"
                 else
                   echo "INFO: No OpenAI API Key provided, skipping OpenAI configuration"
                 fi
