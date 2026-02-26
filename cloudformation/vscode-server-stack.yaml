@@ -1200,23 +1200,23 @@ Resources:
                 # Configure VSCode Server environemnts, including Python 3.12, Node.js 22, Claude Code and Amazon Q
                 echo "INFO: Configuring VSCode Server environment"
 
-                # Build configuration command with conditional parameters
-                CONFIG_CMD="cd /home/ubuntu/${PROJECT_NAME} && ./configure-vscode-server.sh"
+                # Build configuration command arguments dynamically
+                CONFIG_ARGS=""
 
                 if [ -n "${AWS_BEARER_TOKEN_BEDROCK}" ] && [ "${AWS_BEARER_TOKEN_BEDROCK}" != "" ]; then
                   echo "INFO: AWS Bearer Token for Bedrock provided, adding to configuration"
-                  export CONFIG_CMD="$${CONFIG_CMD} --aws-bearer-token-bedrock ${AWS_BEARER_TOKEN_BEDROCK}"
+                  CONFIG_ARGS="$${CONFIG_ARGS} --aws-bearer-token-bedrock ${AWS_BEARER_TOKEN_BEDROCK}"
                 fi
 
                 if [ -n "${OPENAI_API_KEY}" ] && [ "${OPENAI_API_KEY}" != "" ]; then
                   echo "INFO: OpenAI API Key provided, adding to configuration"
-                  export CONFIG_CMD="$${CONFIG_CMD} --openai-api-key ${OPENAI_API_KEY}"
+                  CONFIG_ARGS="$${CONFIG_ARGS} --openai-api-key ${OPENAI_API_KEY}"
                 else
                   echo "INFO: No OpenAI API Key provided, skipping OpenAI configuration"
                 fi
 
-                echo "INFO: Running configuration: $${CONFIG_CMD}"
-                if sudo -i -u ubuntu bash -c "$${CONFIG_CMD}"; then
+                echo "INFO: Running configuration with args: $${CONFIG_ARGS}"
+                if sudo -i -u ubuntu bash -c "cd /home/ubuntu/${PROJECT_NAME} && ./configure-vscode-server.sh $${CONFIG_ARGS}"; then
                   echo "INFO: VSCode Server configuration completed successfully"
                 else
                   echo "ERROR: VSCode Server configuration failed with exit code $?"
