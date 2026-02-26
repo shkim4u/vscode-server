@@ -114,6 +114,11 @@ Parameters:
     Description: AWS Bearer Token for Bedrock authentication (leave empty to skip)
     Default: ""
     NoEcho: true
+  OpenAIAPIKey:
+    Type: String
+    Description: OpenAI API Key (leave empty to skip)
+    Default: ""
+    NoEcho: true
 #------------------------------------------------------
 # VPC and Network Resources
 #------------------------------------------------------
@@ -1196,14 +1201,14 @@ Resources:
                 echo "INFO: Configuring VSCode Server environment"
                 if [ -n "${AWS_BEARER_TOKEN_BEDROCK}" ] && [ "${AWS_BEARER_TOKEN_BEDROCK}" != "" ]; then
                   echo "INFO: AWS Bearer Token for Bedrock provided, configuring with token"
-                  if sudo -i -u ubuntu bash -c "cd /home/ubuntu/${PROJECT_NAME} && ./configure-vscode-server.sh --aws-bearer-token-bedrock ${AWS_BEARER_TOKEN_BEDROCK}"; then
+                  if sudo -i -u ubuntu bash -c "cd /home/ubuntu/${PROJECT_NAME} && ./configure-vscode-server.sh --aws-bearer-token-bedrock ${AWS_BEARER_TOKEN_BEDROCK} --openai-api-key ${OPENAI_API_KEY}"; then
                     echo "INFO: VSCode Server configuration completed successfully"
                   else
                     echo "ERROR: VSCode Server configuration failed with exit code $?"
                   fi
                 else
                   echo "INFO: No AWS Bearer Token for Bedrock provided, configuring without token"
-                  if sudo -i -u ubuntu bash -c "cd /home/ubuntu/${PROJECT_NAME} && ./configure-vscode-server.sh"; then
+                  if sudo -i -u ubuntu bash -c "cd /home/ubuntu/${PROJECT_NAME} && ./configure-vscode-server.sh --openai-api-key ${OPENAI_API_KEY}"; then
                     echo "INFO: VSCode Server configuration completed successfully"
                   else
                     echo "ERROR: VSCode Server configuration failed with exit code $?"
@@ -1286,6 +1291,7 @@ Resources:
               AWS_ACCESS_KEY_ID: !Ref AWSAccessKeyId
               AWS_SECRET_ACCESS_KEY: !Ref AWSSecretAccessKey
               AWS_BEARER_TOKEN_BEDROCK: !Ref AWSBearerTokenBedrock
+              OPENAI_API_KEY: !Ref OpenAIAPIKey
               REGION: !Ref AWS::Region
 #------------------------------------------------------
 # CloudFront Cached Policy
