@@ -128,8 +128,8 @@ echo "=========================================="
 echo "Downloading CloudFormation template..."
 echo "=========================================="
 
-# Download template
-curl -sL https://raw.githubusercontent.com/shkim4u/vscode-server/main/cloudformation/vscode-server-stack.yaml \
+# Download template (force overwrite with -o flag)
+curl -fsSL https://raw.githubusercontent.com/shkim4u/vscode-server/main/cloudformation/vscode-server-stack.yaml \
     -o /tmp/vscode-server-stack.yaml
 
 echo "Template downloaded successfully"
