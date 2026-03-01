@@ -118,25 +118,25 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# Extract AWS credentials from JSON output
-export AWS_ACCESS_KEY_ID=$(echo "$ACCESS_KEY_OUTPUT" | jq -r '.AccessKey.AccessKeyId')
-export AWS_SECRET_ACCESS_KEY=$(echo "$ACCESS_KEY_OUTPUT" | jq -r '.AccessKey.SecretAccessKey')
+# Extract AWS credentials from JSON output (store in separate variables for CloudFormation)
+GENERATED_AWS_ACCESS_KEY_ID=$(echo "$ACCESS_KEY_OUTPUT" | jq -r '.AccessKey.AccessKeyId')
+GENERATED_AWS_SECRET_ACCESS_KEY=$(echo "$ACCESS_KEY_OUTPUT" | jq -r '.AccessKey.SecretAccessKey')
 
 # Validate extracted credentials
-if [ -z "$AWS_ACCESS_KEY_ID" ] || [ "$AWS_ACCESS_KEY_ID" = "null" ]; then
+if [ -z "$GENERATED_AWS_ACCESS_KEY_ID" ] || [ "$GENERATED_AWS_ACCESS_KEY_ID" = "null" ]; then
     echo "✗ Error: Failed to extract AWS_ACCESS_KEY_ID"
     echo "Output: $ACCESS_KEY_OUTPUT"
     exit 1
 fi
 
-if [ -z "$AWS_SECRET_ACCESS_KEY" ] || [ "$AWS_SECRET_ACCESS_KEY" = "null" ]; then
+if [ -z "$GENERATED_AWS_SECRET_ACCESS_KEY" ] || [ "$GENERATED_AWS_SECRET_ACCESS_KEY" = "null" ]; then
     echo "✗ Error: Failed to extract AWS_SECRET_ACCESS_KEY"
     echo "Output: $ACCESS_KEY_OUTPUT"
     exit 1
 fi
 
 echo "✓ Access Key created successfully"
-echo "  AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:0:20}..."
+echo "  AWS_ACCESS_KEY_ID: ${GENERATED_AWS_ACCESS_KEY_ID:0:20}..."
 
 # Create Bedrock Bearer Token (Service-Specific Credential)
 echo "Creating Bedrock Bearer Token for APIuser..."
@@ -148,11 +148,11 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# Extract Bedrock Bearer Token from JSON output
-export AWS_BEARER_TOKEN_BEDROCK=$(echo "$BEDROCK_TOKEN_OUTPUT" | jq -r '.ServiceSpecificCredential.ServiceCredentialSecret')
+# Extract Bedrock Bearer Token from JSON output (store in separate variable for CloudFormation)
+GENERATED_AWS_BEARER_TOKEN_BEDROCK=$(echo "$BEDROCK_TOKEN_OUTPUT" | jq -r '.ServiceSpecificCredential.ServiceCredentialSecret')
 
 # Validate extracted token
-if [ -z "$AWS_BEARER_TOKEN_BEDROCK" ] || [ "$AWS_BEARER_TOKEN_BEDROCK" = "null" ]; then
+if [ -z "$GENERATED_AWS_BEARER_TOKEN_BEDROCK" ] || [ "$GENERATED_AWS_BEARER_TOKEN_BEDROCK" = "null" ]; then
     echo "✗ Error: Failed to extract AWS_BEARER_TOKEN_BEDROCK"
     echo "Output: $BEDROCK_TOKEN_OUTPUT"
     exit 1
@@ -275,9 +275,9 @@ aws cloudformation deploy \
       ProjectName="${PROJECT_NAME}" \
       DeployProjectResource="${DEPLOY_PROJECT_RESOURCE}" \
       DeployInitMinimal="${DEPLOY_INIT_MINIMAL}" \
-      AWSAccessKeyId="${AWS_ACCESS_KEY_ID}" \
-      AWSSecretAccessKey="${AWS_SECRET_ACCESS_KEY}" \
-      AWSBearerTokenBedrock="${AWS_BEARER_TOKEN_BEDROCK}" \
+      AWSAccessKeyId="${GENERATED_AWS_ACCESS_KEY_ID}" \
+      AWSSecretAccessKey="${GENERATED_AWS_SECRET_ACCESS_KEY}" \
+      AWSBearerTokenBedrock="${GENERATED_AWS_BEARER_TOKEN_BEDROCK}" \
       OpenAIAPIKey="${OPENAI_API_KEY}" \
     --capabilities CAPABILITY_IAM \
     --region "${REGION}"
