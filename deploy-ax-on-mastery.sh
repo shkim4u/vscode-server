@@ -3,7 +3,7 @@
 # VSCode Server Stack Deployment Script
 # This script deploys the VSCode Server CloudFormation stack with S3 bucket support
 
-set -e
+# set -e
 
 # Default values
 PROJECT_NAME="ax-on-mastery"
@@ -140,10 +140,7 @@ echo "  AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:0:20}..."
 
 # Create Bedrock Bearer Token (Service-Specific Credential)
 echo "Creating Bedrock Bearer Token for APIuser..."
-BEDROCK_TOKEN_OUTPUT=$(aws iam create-service-specific-credential \
-    --user-name APIuser \
-    --service-name bedrock.amazonaws.com \
-    --credential-age-days 10 2>&1)
+BEDROCK_TOKEN_OUTPUT=$(aws iam create-service-specific-credential --user-name APIuser --service-name bedrock.amazonaws.com --credential-age-days 10 2>&1)
 
 if [ $? -ne 0 ]; then
     echo "✗ Error: Failed to create Bedrock Bearer Token"
