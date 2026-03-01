@@ -172,6 +172,7 @@ aws cloudformation describe-stacks \
     --query 'Stacks[0].Outputs[*].[OutputKey,OutputValue]' \
     --output table
 
+echo ""
 echo "🔎 Retrieving VSCode Server Instance ID..."
 # VSCode Server Instance ID 조회
 VSCODE_SERVER_INSTANCE_ID=$(aws cloudformation describe-stacks \
@@ -182,6 +183,7 @@ VSCODE_SERVER_INSTANCE_ID=$(aws cloudformation describe-stacks \
 echo "🏷️ VSCode Server Instance ID: "
 echo "$VSCODE_SERVER_INSTANCE_ID"
 
+echo ""
 echo "🔎 Retrieving VSCode Server CloudFront Domain Name..."
 # VSCodeServerCloudFrontDomainName 값 조회
 VSCODE_SERVER_CLOUDFRONT_DOMAIN_NAME=$(aws cloudformation describe-stacks \
@@ -200,6 +202,7 @@ PASSWORD_SSM=$(aws cloudformation describe-stacks \
   --region "${REGION}" \
   --output text)
 
+echo ""
 echo "🔎 Retrieving password from Parameter Store: $PASSWORD_SSM"
 PASSWORD=$(aws ssm get-parameter \
   --name "$PASSWORD_SSM" \
@@ -209,7 +212,6 @@ PASSWORD=$(aws ssm get-parameter \
   --output text 2>/dev/null)
 
 if [ $? -eq 0 ] && [ -n "$PASSWORD" ]; then
-  echo ""
   echo "🚨 (주의) 아래 실습 환경 접속을 위한 액세스 코드는 유출되지 않도록 각별히 유의해 주시기 바랍니다!"
   echo "🔑 VSCode Server Access Code: $PASSWORD"
 else
