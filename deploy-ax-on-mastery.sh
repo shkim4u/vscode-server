@@ -12,6 +12,7 @@ VSCODE_SERVER_VERSION="4.109.2"
 DEPLOY_PROJECT_RESOURCE="True"
 DEPLOY_INIT_MINIMAL="False"
 STACK_NAME="VSCodeServerStack"
+AUTO_CONFIRM=false
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -40,6 +41,10 @@ while [[ $# -gt 0 ]]; do
       STACK_NAME="$2"
       shift 2
       ;;
+    --yes)
+      AUTO_CONFIRM=true
+      shift
+      ;;
     --help|-h)
       echo "Usage: $0 [OPTIONS]"
       echo ""
@@ -50,6 +55,7 @@ while [[ $# -gt 0 ]]; do
       echo "  --deploy-project-resource BOOL   Deploy project resources (default: True)"
       echo "  --deploy-init-minimal BOOL       Deploy minimal initialization (default: False)"
       echo "  --stack-name NAME                CloudFormation stack name (default: VSCodeServerStack)"
+      echo "  --yes                            Skip confirmation prompts (auto-confirm)"
       echo "  --help, -h                       Show this help message"
       echo ""
       echo "Environment variables required:"
@@ -71,6 +77,72 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+echo "=========================================="
+echo "Checking for existing APIuser..."
+echo "=========================================="
+
+if aws iam get-user --user-name APIuser &>/dev/null; then
+    echo "⚠️  IAM User 'APIuser' already exists"
+
+    if [ "$AUTO_CONFIRM" = false ]; then
+        read -p "Do you want to delete the existing APIuser? (y/N): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            echo "Aborting..."
+            exit 1
+        fi
+    else
+        echo "Auto-confirm enabled. Proceeding with deletion..."
+    fi
+
+    echo "Deleting existing APIuser..."
+
+    # Delete access keys
+    echo "  Deleting access keys..."
+    ACCESS_KEYS=$(aws iam list-access-keys --user-name APIuser --query 'AccessKeyMetadata[].AccessKeyId' --output text)
+    if [ -n "$ACCESS_KEYS" ]; then
+        for key in $ACCESS_KEYS; do
+            aws iam delete-access-key --user-name APIuser --access-key-id "$key"
+            echo "    ✓ Deleted access key: $key"
+        done
+    else
+        echo "    No access keys to delete"
+    fi
+
+    # Delete service-specific credentials
+    echo "  Deleting service-specific credentials..."
+    SERVICE_CREDS=$(aws iam list-service-specific-credentials --user-name APIuser --query 'ServiceSpecificCredentials[].ServiceSpecificCredentialId' --output text 2>/dev/null || echo "")
+    if [ -n "$SERVICE_CREDS" ]; then
+        for cred in $SERVICE_CREDS; do
+            aws iam delete-service-specific-credential --user-name APIuser --service-specific-credential-id "$cred"
+            echo "    ✓ Deleted service-specific credential: $cred"
+        done
+    else
+        echo "    No service-specific credentials to delete"
+    fi
+
+    # Detach policies
+    echo "  Detaching policies..."
+    POLICIES=$(aws iam list-attached-user-policies --user-name APIuser --query 'AttachedPolicies[].PolicyArn' --output text)
+    if [ -n "$POLICIES" ]; then
+        for policy in $POLICIES; do
+            aws iam detach-user-policy --user-name APIuser --policy-arn "$policy"
+            echo "    ✓ Detached policy: $policy"
+        done
+    else
+        echo "    No policies to detach"
+    fi
+
+    # Delete user
+    echo "  Deleting user..."
+    aws iam delete-user --user-name APIuser
+    echo "✓ IAM User 'APIuser' deleted successfully"
+else
+    echo "✓ IAM User 'APIuser' does not exist"
+fi
+
+echo "=========================================="
+echo ""
 echo "=========================================="
 echo "Setting up IAM User and Environment Variables"
 echo "=========================================="
