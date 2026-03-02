@@ -396,6 +396,7 @@ PASSWORD_SSM=$(aws cloudformation describe-stacks \
   --region "${REGION}" \
   --output text)
 
+echo ""
 echo "🔎 Retrieving password from Parameter Store: $PASSWORD_SSM"
 PASSWORD=$(aws ssm get-parameter \
   --name "$PASSWORD_SSM" \
