@@ -82,7 +82,7 @@ echo "Checking for existing APIuser..."
 echo "=========================================="
 
 if aws iam get-user --user-name APIuser &>/dev/null; then
-    echo "⚠️  IAM User 'APIuser' already exists"
+    echo "⚠️ IAM User 'APIuser' already exists"
 
     if [ "$AUTO_CONFIRM" = false ]; then
         read -p "Do you want to delete the existing APIuser? (y/N): " -n 1 -r
@@ -103,10 +103,10 @@ if aws iam get-user --user-name APIuser &>/dev/null; then
     if [ -n "$ACCESS_KEYS" ]; then
         for key in $ACCESS_KEYS; do
             aws iam delete-access-key --user-name APIuser --access-key-id "$key"
-            echo "    ✓ Deleted access key: $key"
+            echo "🔑 Access key deleted: $key"
         done
     else
-        echo "    No access keys to delete"
+        echo "📌 No access keys to delete"
     fi
 
     # Delete service-specific credentials
@@ -115,10 +115,10 @@ if aws iam get-user --user-name APIuser &>/dev/null; then
     if [ -n "$SERVICE_CREDS" ]; then
         for cred in $SERVICE_CREDS; do
             aws iam delete-service-specific-credential --user-name APIuser --service-specific-credential-id "$cred"
-            echo "    ✓ Deleted service-specific credential: $cred"
+            echo "🔐 Service-specific credential deleted: $cred"
         done
     else
-        echo "    No service-specific credentials to delete"
+        echo "📌 No service-specific credentials to delete"
     fi
 
     # Detach policies
@@ -127,18 +127,18 @@ if aws iam get-user --user-name APIuser &>/dev/null; then
     if [ -n "$POLICIES" ]; then
         for policy in $POLICIES; do
             aws iam detach-user-policy --user-name APIuser --policy-arn "$policy"
-            echo "    ✓ Detached policy: $policy"
+            echo "📝 Policy deleted: $policy"
         done
     else
-        echo "    No policies to detach"
+        echo "📌 No policies to detach"
     fi
 
     # Delete user
     echo "  Deleting user..."
     aws iam delete-user --user-name APIuser
-    echo "✓ IAM User 'APIuser' deleted successfully"
+    echo "🙋🏻‍♀️ IAM User 'APIuser' deleted successfully"
 else
-    echo "✓ IAM User 'APIuser' does not exist"
+    echo "📌 IAM User 'APIuser' does not exist"
 fi
 
 echo "=========================================="
