@@ -1086,231 +1086,235 @@ Resources:
       Monitoring: true
       UserData:
         Fn::Base64:
-          Fn::Sub:
-            - |
-              #!/bin/bash
-              echo "INFO: Starting UserData script execution"
-                          
-              # Install AWS CLI and jq
-              echo "INFO: Installing AWS CLI prerequisites and jq"
-              apt-get -o DPkg::Lock::Timeout=-1 update
-              DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=-1 install -y curl unzip jq
-              echo "INFO: Prerequisites and jq installed, downloading AWS CLI"
-              curl -fsSL https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip -o /tmp/aws-cli.zip
-              echo "INFO: Extracting AWS CLI"
-              unzip -q -d /tmp /tmp/aws-cli.zip
-              echo "INFO: Installing AWS CLI"
-              sudo /tmp/aws/install
-              rm -rf /tmp/aws /tmp/aws-cli.zip
-              echo "INFO: AWS CLI installation complete"
-              aws --version
+          Fn::Join:
+            - ''
+            - - !Sub
+                - |
+                  #!/bin/bash
+                  echo "INFO: Starting UserData script execution"
 
-              # Configure AWS CLI credentials
-              echo "INFO: Configuring AWS CLI credentials"
-              if [ -n "${AWS_ACCESS_KEY_ID}" ] && [ "${AWS_ACCESS_KEY_ID}" != "" ]; then
-                echo "INFO: Setting AWS Access Key ID"
-                sudo -u ubuntu aws configure set aws_access_key_id "${AWS_ACCESS_KEY_ID}"
-              else
-                echo "INFO: AWS Access Key ID not provided, skipping"
-              fi
+                  # Install AWS CLI and jq
+                  echo "INFO: Installing AWS CLI prerequisites and jq"
+                  apt-get -o DPkg::Lock::Timeout=-1 update
+                  DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=-1 install -y curl unzip jq
+                  echo "INFO: Prerequisites and jq installed, downloading AWS CLI"
+                  curl -fsSL https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip -o /tmp/aws-cli.zip
+                  echo "INFO: Extracting AWS CLI"
+                  unzip -q -d /tmp /tmp/aws-cli.zip
+                  echo "INFO: Installing AWS CLI"
+                  sudo /tmp/aws/install
+                  rm -rf /tmp/aws /tmp/aws-cli.zip
+                  echo "INFO: AWS CLI installation complete"
+                  aws --version
 
-              if [ -n "${AWS_SECRET_ACCESS_KEY}" ] && [ "${AWS_SECRET_ACCESS_KEY}" != "" ]; then
-                echo "INFO: Setting AWS Secret Access Key"
-                sudo -u ubuntu aws configure set aws_secret_access_key "${AWS_SECRET_ACCESS_KEY}"
-              else
-                echo "INFO: AWS Secret Access Key not provided, skipping"
-              fi
-
-              if [ -n "${REGION}" ] && [ "${REGION}" != "" ]; then
-                echo "INFO: Setting AWS region to ${REGION}"
-                sudo -u ubuntu aws configure set region "${REGION}"
-              else
-                echo "INFO: Region not provided, skipping"
-              fi
-
-              # Install Docker
-              echo "INFO: Installing Docker"
-              DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=-1 install -y ca-certificates gnupg lsb-release
-              echo "INFO: Adding Docker GPG key"
-              install -m 0755 -d /etc/apt/keyrings
-              curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-              chmod a+r /etc/apt/keyrings/docker.gpg
-              echo "INFO: Adding Docker repository"
-              echo \
-                "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-                $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
-              echo "INFO: Installing Docker packages"
-              apt-get -o DPkg::Lock::Timeout=-1 update
-              DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=-1 install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-              echo "INFO: Adding ubuntu user to docker group"
-              usermod -aG docker ubuntu
-              echo "INFO: Starting Docker service"
-              systemctl enable docker
-              systemctl start docker
-              echo "INFO: Docker installation complete"
-              docker --version
-              
-              # Install code-server
-              echo "INFO: Installing code-server"
-
-              # Try to get latest version from GitHub API
-              echo "INFO: Attempting to fetch latest code-server version"
-              LATEST_VERSION=$$(curl -s https://api.github.com/repos/coder/code-server/releases/latest | jq -r '.tag_name' 2>/dev/null)
-
-              if [ $$? -eq 0 ] && [ -n "$$LATEST_VERSION" ]; then
-                echo "INFO: Successfully fetched latest version: $$LATEST_VERSION"
-                # Remove 'v' prefix using sed instead of bash parameter expansion
-                VERSION_TO_USE=$$(echo "$$LATEST_VERSION" | sed 's/^v//')
-                DOWNLOAD_URL="https://github.com/coder/code-server/releases/download/$${LATEST_VERSION}/code-server_$${VERSION_TO_USE}_amd64.deb"
-              else
-                echo "INFO: Failed to fetch latest version, using default version: ${VERSION}"
-                VERSION_TO_USE=${VERSION}
-                DOWNLOAD_URL="https://github.com/coder/code-server/releases/download/v${VERSION}/code-server_${VERSION}_amd64.deb"
-              fi
-
-              echo "INFO: Downloading code-server from: $$DOWNLOAD_URL"
-              curl -fOL $$DOWNLOAD_URL
-              sudo dpkg -i code-server_$${VERSION_TO_USE}_amd64.deb
-              echo "INFO: Enabling and starting code-server"
-              sudo systemctl enable --now code-server@ubuntu
-              sleep 30
-              
-              # Configure password
-              echo "INFO: Configuring code-server"
-              # sed -i.bak 's/auth: password/auth: none/' /home/ubuntu/.config/code-server/config.yaml
-              # Expose code server service 
-              sed -i.bak 's/bind-addr: 127.0.0.1:8080/bind-addr: 0.0.0.0:8080/' /home/ubuntu/.config/code-server/config.yaml
-              
-              # Restart code server
-              echo "INFO: Restarting code-server"
-              sudo systemctl restart code-server@ubuntu
-              
-              # Install extension amazonwebservices.amazon-q-vscode
-              echo "INFO: Installing Amazon Q extension"
-              sudo -u ubuntu code-server --install-extension amazonwebservices.amazon-q-vscode
-              
-              # Restart code server
-              echo "INFO: Final restart of code-server"
-              sudo systemctl restart code-server@ubuntu
-              
-              # Store password in SSM Parameter Store for easy retrieval
-              echo "INFO: Storing password in SSM Parameter Store"
-              sleep 10  # Wait for config file to be fully written
-              CODE_SERVER_PASSWORD=$(sudo grep "^password:" /home/ubuntu/.config/code-server/config.yaml | cut -d' ' -f2)
-              echo "INFO: Extracted password, creating SSM parameter"
-              aws ssm put-parameter \
-                --name "/code-server/password" \
-                --value "$CODE_SERVER_PASSWORD" \
-                --type "SecureString" \
-                --region ${AWS::Region} \
-                --overwrite
-              echo "INFO: SSM parameter creation complete"
-
-              # Clone GitHub repository if token is provided
-              if [ -n "${GITHUB_TOKEN}" ]; then
-                echo "INFO: GitHub access token provided, cloning repository"
-                cd /home/ubuntu
-                sudo -u ubuntu git clone https://x-access-token:${GITHUB_TOKEN}@github.com/shkim4u/${PROJECT_NAME}
-                echo "INFO: Repository cloned successfully"
-
-                # Configure VSCode Server environemnts, including Python 3.12, Node.js 22, Claude Code and Amazon Q
-                echo "INFO: Configuring VSCode Server environment"
-                if [ -n "${AWS_BEARER_TOKEN_BEDROCK}" ] && [ "${AWS_BEARER_TOKEN_BEDROCK}" != "" ]; then
-                  if [ -n "${OPENAI_API_KEY}" ] && [ "${OPENAI_API_KEY}" != "" ]; then
-                    echo "INFO: AWS Bearer Token and OpenAI API Key provided, configuring with both"
-                    sudo -i -u ubuntu bash -c "cd /home/ubuntu/${PROJECT_NAME} && ./configure-vscode-server.sh --aws-bearer-token-bedrock ${AWS_BEARER_TOKEN_BEDROCK} --openai-api-key ${OPENAI_API_KEY}"
+                  # Configure AWS CLI credentials
+                  echo "INFO: Configuring AWS CLI credentials"
+                  if [ -n "${AWS_ACCESS_KEY_ID}" ] && [ "${AWS_ACCESS_KEY_ID}" != "" ]; then
+                    echo "INFO: Setting AWS Access Key ID"
+                    sudo -u ubuntu aws configure set aws_access_key_id "${AWS_ACCESS_KEY_ID}"
                   else
-                    echo "INFO: AWS Bearer Token provided, configuring with token (no OpenAI key)"
-                    sudo -i -u ubuntu bash -c "cd /home/ubuntu/${PROJECT_NAME} && ./configure-vscode-server.sh --aws-bearer-token-bedrock ${AWS_BEARER_TOKEN_BEDROCK}"
+                    echo "INFO: AWS Access Key ID not provided, skipping"
                   fi
-                else
-                  if [ -n "${OPENAI_API_KEY}" ] && [ "${OPENAI_API_KEY}" != "" ]; then
-                    echo "INFO: OpenAI API Key provided, configuring with key (no AWS Bearer Token)"
-                    sudo -i -u ubuntu bash -c "cd /home/ubuntu/${PROJECT_NAME} && ./configure-vscode-server.sh --openai-api-key ${OPENAI_API_KEY}"
+
+                  if [ -n "${AWS_SECRET_ACCESS_KEY}" ] && [ "${AWS_SECRET_ACCESS_KEY}" != "" ]; then
+                    echo "INFO: Setting AWS Secret Access Key"
+                    sudo -u ubuntu aws configure set aws_secret_access_key "${AWS_SECRET_ACCESS_KEY}"
                   else
-                    echo "INFO: No AWS Bearer Token or OpenAI API Key provided, configuring without tokens"
-                    sudo -i -u ubuntu bash -c "cd /home/ubuntu/${PROJECT_NAME} && ./configure-vscode-server.sh"
+                    echo "INFO: AWS Secret Access Key not provided, skipping"
                   fi
-                fi
-              else
-                echo "INFO: No GitHub access token provided, skipping repository clone"
-              fi
 
-              # Configure SSH public key for Remote SSH
-              if [ -n "${REMOTE_SSH_PUBLIC_KEY}" ]; then
-                echo "INFO: Configuring SSH public key for VSCode Remote SSH"
-                sudo -i -u ubuntu bash -c "mkdir -p ~/.ssh && chmod 700 ~/.ssh"
-                sudo -i -u ubuntu bash -c "echo '${REMOTE_SSH_PUBLIC_KEY}' >> ~/.ssh/authorized_keys"
-                sudo -i -u ubuntu bash -c "chmod 600 ~/.ssh/authorized_keys"
-                echo "INFO: SSH public key configuration complete"
-              else
-                echo "INFO: No SSH public key provided, skipping SSH configuration"
-              fi
+                  if [ -n "${REGION}" ] && [ "${REGION}" != "" ]; then
+                    echo "INFO: Setting AWS region to ${REGION}"
+                    sudo -u ubuntu aws configure set region "${REGION}"
+                  else
+                    echo "INFO: Region not provided, skipping"
+                  fi
 
-              # Sync SageMaker models to S3 bucket
-              if [ -d "/home/ubuntu/${PROJECT_NAME}" ]; then
-                echo "INFO: Syncing SageMaker models to S3 bucket"
-                if sudo -i -u ubuntu bash -c "cd /home/ubuntu/${PROJECT_NAME} && ./scripts/sync-sagemaker-models-from-source.sh --target-bucket ${S3_BUCKET_NAME}"; then
-                  echo "INFO: SageMaker models sync completed successfully"
+                  # Install Docker
+                  echo "INFO: Installing Docker"
+                  DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=-1 install -y ca-certificates gnupg lsb-release
+                  echo "INFO: Adding Docker GPG key"
+                  install -m 0755 -d /etc/apt/keyrings
+                  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+                  chmod a+r /etc/apt/keyrings/docker.gpg
+                  echo "INFO: Adding Docker repository"
+                  echo \
+                    "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+                    $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+                  echo "INFO: Installing Docker packages"
+                  apt-get -o DPkg::Lock::Timeout=-1 update
+                  DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=-1 install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+                  echo "INFO: Adding ubuntu user to docker group"
+                  usermod -aG docker ubuntu
+                  echo "INFO: Starting Docker service"
+                  systemctl enable docker
+                  systemctl start docker
+                  echo "INFO: Docker installation complete"
+                  docker --version
+
+                  # Install code-server
+                  echo "INFO: Installing code-server"
+                  DEFAULT_VERSION="${VERSION}"
+                - VERSION: !Ref VSCodeServerVersion
+                  AWS_ACCESS_KEY_ID: !Ref AWSAccessKeyId
+                  AWS_SECRET_ACCESS_KEY: !Ref AWSSecretAccessKey
+                  REGION: !Ref AWS::Region
+              - |
+                # Try to get latest version from GitHub API (pure bash, no CloudFormation variables)
+                echo "INFO: Attempting to fetch latest code-server version"
+                LATEST_VERSION=$(curl -s https://api.github.com/repos/coder/code-server/releases/latest | jq -r '.tag_name' 2>/dev/null)
+
+                if [ $? -eq 0 ] && [ -n "$LATEST_VERSION" ]; then
+                  echo "INFO: Successfully fetched latest version: $LATEST_VERSION"
+                  # Remove 'v' prefix using sed
+                  VERSION_TO_USE=$(echo "$LATEST_VERSION" | sed 's/^v//')
+                  DOWNLOAD_URL="https://github.com/coder/code-server/releases/download/${LATEST_VERSION}/code-server_${VERSION_TO_USE}_amd64.deb"
                 else
-                  echo "ERROR: SageMaker models sync failed with exit code $?"
+                  echo "INFO: Failed to fetch latest version, using default version: $DEFAULT_VERSION"
+                  VERSION_TO_USE=$DEFAULT_VERSION
+                  DOWNLOAD_URL="https://github.com/coder/code-server/releases/download/v${DEFAULT_VERSION}/code-server_${DEFAULT_VERSION}_amd64.deb"
                 fi
-              else
-                echo "INFO: ${PROJECT_NAME} directory not found, skipping SageMaker models sync"
-              fi
 
-              # npm build and deploy (only if DeployProjectResource is True)
-              DEPLOY_RESOURCE=$(echo "${DEPLOY_PROJECT_RESOURCE}" | tr '[:upper:]' '[:lower:]')
-              DEPLOY_INIT_MINIMAL=$(echo "${DEPLOY_INIT_MINIMAL}" | tr '[:upper:]' '[:lower:]')
-              if [ "$DEPLOY_RESOURCE" = "true" ]; then
-                if [ -d "/home/ubuntu/${PROJECT_NAME}" ]; then
-                  if [ "$DEPLOY_INIT_MINIMAL" = "true" ]; then
-                    echo "INFO: Running npm build and deploy:init-minimal for ${PROJECT_NAME}"
-                    if sudo -u ubuntu bash -c 'export HOME=/home/ubuntu && cd $HOME && source ~/.bashrc && export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" && cd '"${PROJECT_NAME}"' && cp bin/config-init-minimal.json bin/config.json && npm ci && npm run bootstrap && npm run build && npm run deploy'; then
-                      echo "INFO: npm build and deploy:init-minimal completed successfully"
+                echo "INFO: Downloading code-server from: $DOWNLOAD_URL"
+                curl -fOL $DOWNLOAD_URL
+                sudo dpkg -i code-server_${VERSION_TO_USE}_amd64.deb
+                echo "INFO: Enabling and starting code-server"
+                sudo systemctl enable --now code-server@ubuntu
+                sleep 30
+              - !Sub
+                - |
+                  # Configure password
+                  echo "INFO: Configuring code-server"
+                  # sed -i.bak 's/auth: password/auth: none/' /home/ubuntu/.config/code-server/config.yaml
+                  # Expose code server service
+                  sed -i.bak 's/bind-addr: 127.0.0.1:8080/bind-addr: 0.0.0.0:8080/' /home/ubuntu/.config/code-server/config.yaml
+
+                  # Restart code server
+                  echo "INFO: Restarting code-server"
+                  sudo systemctl restart code-server@ubuntu
+
+                  # Install extension amazonwebservices.amazon-q-vscode
+                  echo "INFO: Installing Amazon Q extension"
+                  sudo -u ubuntu code-server --install-extension amazonwebservices.amazon-q-vscode
+
+                  # Restart code server
+                  echo "INFO: Final restart of code-server"
+                  sudo systemctl restart code-server@ubuntu
+
+                  # Store password in SSM Parameter Store for easy retrieval
+                  echo "INFO: Storing password in SSM Parameter Store"
+                  sleep 10  # Wait for config file to be fully written
+                  CODE_SERVER_PASSWORD=$(sudo grep "^password:" /home/ubuntu/.config/code-server/config.yaml | cut -d' ' -f2)
+                  echo "INFO: Extracted password, creating SSM parameter"
+                  aws ssm put-parameter \
+                    --name "/code-server/password" \
+                    --value "$CODE_SERVER_PASSWORD" \
+                    --type "SecureString" \
+                    --region ${AWS::Region} \
+                    --overwrite
+                  echo "INFO: SSM parameter creation complete"
+
+                  # Clone GitHub repository if token is provided
+                  if [ -n "${GITHUB_TOKEN}" ]; then
+                    echo "INFO: GitHub access token provided, cloning repository"
+                    cd /home/ubuntu
+                    sudo -u ubuntu git clone https://x-access-token:${GITHUB_TOKEN}@github.com/shkim4u/${PROJECT_NAME}
+                    echo "INFO: Repository cloned successfully"
+
+                    # Configure VSCode Server environemnts, including Python 3.12, Node.js 22, Claude Code and Amazon Q
+                    echo "INFO: Configuring VSCode Server environment"
+                    if [ -n "${AWS_BEARER_TOKEN_BEDROCK}" ] && [ "${AWS_BEARER_TOKEN_BEDROCK}" != "" ]; then
+                      if [ -n "${OPENAI_API_KEY}" ] && [ "${OPENAI_API_KEY}" != "" ]; then
+                        echo "INFO: AWS Bearer Token and OpenAI API Key provided, configuring with both"
+                        sudo -i -u ubuntu bash -c "cd /home/ubuntu/${PROJECT_NAME} && ./configure-vscode-server.sh --aws-bearer-token-bedrock ${AWS_BEARER_TOKEN_BEDROCK} --openai-api-key ${OPENAI_API_KEY}"
+                      else
+                        echo "INFO: AWS Bearer Token provided, configuring with token (no OpenAI key)"
+                        sudo -i -u ubuntu bash -c "cd /home/ubuntu/${PROJECT_NAME} && ./configure-vscode-server.sh --aws-bearer-token-bedrock ${AWS_BEARER_TOKEN_BEDROCK}"
+                      fi
                     else
-                      echo "ERROR: npm build and deploy:init-minimal failed with exit code $?"
+                      if [ -n "${OPENAI_API_KEY}" ] && [ "${OPENAI_API_KEY}" != "" ]; then
+                        echo "INFO: OpenAI API Key provided, configuring with key (no AWS Bearer Token)"
+                        sudo -i -u ubuntu bash -c "cd /home/ubuntu/${PROJECT_NAME} && ./configure-vscode-server.sh --openai-api-key ${OPENAI_API_KEY}"
+                      else
+                        echo "INFO: No AWS Bearer Token or OpenAI API Key provided, configuring without tokens"
+                        sudo -i -u ubuntu bash -c "cd /home/ubuntu/${PROJECT_NAME} && ./configure-vscode-server.sh"
+                      fi
                     fi
                   else
-                    echo "INFO: Running npm build and deploy for ${PROJECT_NAME}"
-                    if sudo -u ubuntu bash -c 'export HOME=/home/ubuntu && cd $HOME && source ~/.bashrc && export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" && cd '"${PROJECT_NAME}"' && npm ci && npm run bootstrap && npm run build && npm run deploy'; then
-                      echo "INFO: npm build and deploy completed successfully"
-                    else
-                      echo "ERROR: npm build and deploy failed with exit code $?"
-                    fi
+                    echo "INFO: No GitHub access token provided, skipping repository clone"
                   fi
-                else
-                  echo "INFO: ${PROJECT_NAME} directory not found, skipping npm build and deploy"
-                fi
-              else
-                echo "INFO: DeployProjectResource is false, skipping npm build and deploy"
-              fi
 
-              # Execute post-configuration script if exists
-              if [ -f "/home/ubuntu/${PROJECT_NAME}/post-configure-vscode-server.sh" ]; then
-                echo "INFO: Executing post-configuration script"
-                if sudo -i -u ubuntu bash -c "cd /home/ubuntu/${PROJECT_NAME} && ./post-configure-vscode-server.sh"; then
-                  echo "INFO: Post-configuration script completed successfully"
-                else
-                  echo "ERROR: Post-configuration script failed with exit code $?"
-                fi
-              else
-                echo "INFO: Post-configuration script not found, skipping"
-              fi
+                  # Configure SSH public key for Remote SSH
+                  if [ -n "${REMOTE_SSH_PUBLIC_KEY}" ]; then
+                    echo "INFO: Configuring SSH public key for VSCode Remote SSH"
+                    sudo -i -u ubuntu bash -c "mkdir -p ~/.ssh && chmod 700 ~/.ssh"
+                    sudo -i -u ubuntu bash -c "echo '${REMOTE_SSH_PUBLIC_KEY}' >> ~/.ssh/authorized_keys"
+                    sudo -i -u ubuntu bash -c "chmod 600 ~/.ssh/authorized_keys"
+                    echo "INFO: SSH public key configuration complete"
+                  else
+                    echo "INFO: No SSH public key provided, skipping SSH configuration"
+                  fi
 
-              echo "INFO: UserData script execution finished"
-            - VERSION: !Ref VSCodeServerVersion
-              GITHUB_TOKEN: !Ref GitHubAccessToken
-              REMOTE_SSH_PUBLIC_KEY: !Ref RemoteSSHPublicKey
-              S3_BUCKET_NAME: !GetAtt SageMakerModelsS3Bucket.BucketName
-              PROJECT_NAME: !Ref ProjectName
-              DEPLOY_PROJECT_RESOURCE: !Ref DeployProjectResource
-              DEPLOY_INIT_MINIMAL: !Ref DeployInitMinimal
-              AWS_ACCESS_KEY_ID: !Ref AWSAccessKeyId
-              AWS_SECRET_ACCESS_KEY: !Ref AWSSecretAccessKey
-              AWS_BEARER_TOKEN_BEDROCK: !Ref AWSBearerTokenBedrock
-              OPENAI_API_KEY: !Ref OpenAIAPIKey
-              REGION: !Ref AWS::Region
+                  # Sync SageMaker models to S3 bucket
+                  if [ -d "/home/ubuntu/${PROJECT_NAME}" ]; then
+                    echo "INFO: Syncing SageMaker models to S3 bucket"
+                    if sudo -i -u ubuntu bash -c "cd /home/ubuntu/${PROJECT_NAME} && ./scripts/sync-sagemaker-models-from-source.sh --target-bucket ${S3_BUCKET_NAME}"; then
+                      echo "INFO: SageMaker models sync completed successfully"
+                    else
+                      echo "ERROR: SageMaker models sync failed with exit code $?"
+                    fi
+                  else
+                    echo "INFO: ${PROJECT_NAME} directory not found, skipping SageMaker models sync"
+                  fi
+
+                  # npm build and deploy (only if DeployProjectResource is True)
+                  DEPLOY_RESOURCE=$(echo "${DEPLOY_PROJECT_RESOURCE}" | tr '[:upper:]' '[:lower:]')
+                  DEPLOY_INIT_MINIMAL=$(echo "${DEPLOY_INIT_MINIMAL}" | tr '[:upper:]' '[:lower:]')
+                  if [ "$DEPLOY_RESOURCE" = "true" ]; then
+                    if [ -d "/home/ubuntu/${PROJECT_NAME}" ]; then
+                      if [ "$DEPLOY_INIT_MINIMAL" = "true" ]; then
+                        echo "INFO: Running npm build and deploy:init-minimal for ${PROJECT_NAME}"
+                        if sudo -u ubuntu bash -c 'export HOME=/home/ubuntu && cd $HOME && source ~/.bashrc && export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" && cd '"${PROJECT_NAME}"' && cp bin/config-init-minimal.json bin/config.json && npm ci && npm run bootstrap && npm run build && npm run deploy'; then
+                          echo "INFO: npm build and deploy:init-minimal completed successfully"
+                        else
+                          echo "ERROR: npm build and deploy:init-minimal failed with exit code $?"
+                        fi
+                      else
+                        echo "INFO: Running npm build and deploy for ${PROJECT_NAME}"
+                        if sudo -u ubuntu bash -c 'export HOME=/home/ubuntu && cd $HOME && source ~/.bashrc && export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" && cd '"${PROJECT_NAME}"' && npm ci && npm run bootstrap && npm run build && npm run deploy'; then
+                          echo "INFO: npm build and deploy completed successfully"
+                        else
+                          echo "ERROR: npm build and deploy failed with exit code $?"
+                        fi
+                      fi
+                    else
+                      echo "INFO: ${PROJECT_NAME} directory not found, skipping npm build and deploy"
+                    fi
+                  else
+                    echo "INFO: DeployProjectResource is false, skipping npm build and deploy"
+                  fi
+
+                  # Execute post-configuration script if exists
+                  if [ -f "/home/ubuntu/${PROJECT_NAME}/post-configure-vscode-server.sh" ]; then
+                    echo "INFO: Executing post-configuration script"
+                    if sudo -i -u ubuntu bash -c "cd /home/ubuntu/${PROJECT_NAME} && ./post-configure-vscode-server.sh"; then
+                      echo "INFO: Post-configuration script completed successfully"
+                    else
+                      echo "ERROR: Post-configuration script failed with exit code $?"
+                    fi
+                  else
+                    echo "INFO: Post-configuration script not found, skipping"
+                  fi
+
+                  echo "INFO: UserData script execution finished"
+                - GITHUB_TOKEN: !Ref GitHubAccessToken
+                  REMOTE_SSH_PUBLIC_KEY: !Ref RemoteSSHPublicKey
+                  S3_BUCKET_NAME: !GetAtt SageMakerModelsS3Bucket.BucketName
+                  PROJECT_NAME: !Ref ProjectName
+                  DEPLOY_PROJECT_RESOURCE: !Ref DeployProjectResource
+                  DEPLOY_INIT_MINIMAL: !Ref DeployInitMinimal
+                  AWS_BEARER_TOKEN_BEDROCK: !Ref AWSBearerTokenBedrock
+                  OPENAI_API_KEY: !Ref OpenAIAPIKey
 #------------------------------------------------------
 # CloudFront Cached Policy
 #------------------------------------------------------
