@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MIT-0
 #------------------------------------------------------
 AWSTemplateFormatVersion: "2010-09-09"
-Description: deploy a vscode-server on an ec2
+Description: Deploy a vscode-server on an EC2 instance with CloudFront distribution for web access
 #------------------------------------------------------
 # Mappings CloudFront PrefixListId
 #------------------------------------------------------
