@@ -160,8 +160,19 @@ aws cloudformation deploy \
     --capabilities CAPABILITY_IAM \
     --region "${REGION}"
 
+# Check deployment result
+DEPLOY_EXIT_CODE=$?
+if [ $DEPLOY_EXIT_CODE -ne 0 ]; then
+    echo "=========================================="
+    echo "✗ Deployment failed!"
+    echo "=========================================="
+    echo "CloudFormation deployment returned error code: $DEPLOY_EXIT_CODE"
+    echo "Please check the CloudFormation console for detailed error information."
+    exit 1
+fi
+
 echo "=========================================="
-echo "Deployment completed successfully!"
+echo "✓ Deployment completed successfully!"
 echo "=========================================="
 
 # Get stack outputs

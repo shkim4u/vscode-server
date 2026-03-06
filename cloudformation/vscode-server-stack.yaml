@@ -1155,21 +1155,21 @@ Resources:
 
               # Try to get latest version from GitHub API
               echo "INFO: Attempting to fetch latest code-server version"
-              LATEST_VERSION=$(curl -s https://api.github.com/repos/coder/code-server/releases/latest | jq -r '.tag_name' 2>/dev/null)
+              LATEST_VERSION=$$(curl -s https://api.github.com/repos/coder/code-server/releases/latest | jq -r '.tag_name' 2>/dev/null)
 
-              if [ $? -eq 0 ] && [ -n "$LATEST_VERSION" ]; then
-                echo "INFO: Successfully fetched latest version: $LATEST_VERSION"
-                VERSION_TO_USE=${LATEST_VERSION#v}  # Remove 'v' prefix
-                DOWNLOAD_URL="https://github.com/coder/code-server/releases/download/${LATEST_VERSION}/code-server_${VERSION_TO_USE}_amd64.deb"
+              if [ $$? -eq 0 ] && [ -n "$$LATEST_VERSION" ]; then
+                echo "INFO: Successfully fetched latest version: $$LATEST_VERSION"
+                VERSION_TO_USE=$${LATEST_VERSION#v}  # Remove 'v' prefix
+                DOWNLOAD_URL="https://github.com/coder/code-server/releases/download/$${LATEST_VERSION}/code-server_$${VERSION_TO_USE}_amd64.deb"
               else
                 echo "INFO: Failed to fetch latest version, using default version: ${VERSION}"
                 VERSION_TO_USE=${VERSION}
                 DOWNLOAD_URL="https://github.com/coder/code-server/releases/download/v${VERSION}/code-server_${VERSION}_amd64.deb"
               fi
 
-              echo "INFO: Downloading code-server from: $DOWNLOAD_URL"
-              curl -fOL $DOWNLOAD_URL
-              sudo dpkg -i code-server_${VERSION_TO_USE}_amd64.deb
+              echo "INFO: Downloading code-server from: $$DOWNLOAD_URL"
+              curl -fOL $$DOWNLOAD_URL
+              sudo dpkg -i code-server_$${VERSION_TO_USE}_amd64.deb
               echo "INFO: Enabling and starting code-server"
               sudo systemctl enable --now code-server@ubuntu
               sleep 30
