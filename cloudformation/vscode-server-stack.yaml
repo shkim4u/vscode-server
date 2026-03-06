@@ -1159,7 +1159,8 @@ Resources:
 
               if [ $$? -eq 0 ] && [ -n "$$LATEST_VERSION" ]; then
                 echo "INFO: Successfully fetched latest version: $$LATEST_VERSION"
-                VERSION_TO_USE=$${LATEST_VERSION#v}  # Remove 'v' prefix
+                # Remove 'v' prefix using sed instead of bash parameter expansion
+                VERSION_TO_USE=$$(echo "$$LATEST_VERSION" | sed 's/^v//')
                 DOWNLOAD_URL="https://github.com/coder/code-server/releases/download/$${LATEST_VERSION}/code-server_$${VERSION_TO_USE}_amd64.deb"
               else
                 echo "INFO: Failed to fetch latest version, using default version: ${VERSION}"
