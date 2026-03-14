@@ -137,6 +137,7 @@ if [ "$SKIP_PROMPT" = false ]; then
     echo -e "${RED}WARNING: This script will:${NC}"
     echo -e "${RED}  1. Delete CloudFormation stacks: $STACKS${NC}"
     echo -e "${RED}  2. Delete all AgentCore Runtimes in $AGENTCORE_REGION${NC}"
+    echo -e "${RED}  3. Delete IAM User 'APIuser' (if exists)${NC}"
     echo -e "${RED}This action cannot be undone!${NC}"
     echo ""
     read -p "$(echo -e ${RED}Are you sure you want to proceed? [y/N]: ${NC})" -n 1 -r
@@ -381,6 +382,82 @@ fi
 echo ""
 
 #############################################
+# Part 3: IAM User (APIuser) Cleanup
+#############################################
+
+echo -e "${YELLOW}=== Part 3: IAM User (APIuser) Cleanup ===${NC}"
+echo ""
+
+IAM_USER_DELETED=false
+
+if aws iam get-user --user-name APIuser &>/dev/null; then
+    echo -e "${YELLOW}Found IAM User 'APIuser'${NC}"
+
+    PROCEED_IAM=true
+    if [ "$SKIP_PROMPT" = false ]; then
+        read -p "$(echo -e ${RED}Do you want to delete the IAM User 'APIuser'? [y/N]: ${NC})" -n 1 -r
+        echo ""
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            echo -e "${YELLOW}IAM User cleanup skipped by user.${NC}"
+            PROCEED_IAM=false
+        fi
+    fi
+
+    if [ "$PROCEED_IAM" = true ]; then
+        echo -e "${YELLOW}Deleting IAM User 'APIuser'...${NC}"
+
+        # Delete access keys
+        echo "  Deleting access keys..."
+        ACCESS_KEYS=$(aws iam list-access-keys --user-name APIuser --query 'AccessKeyMetadata[].AccessKeyId' --output text)
+        if [ -n "$ACCESS_KEYS" ]; then
+            for key in $ACCESS_KEYS; do
+                aws iam delete-access-key --user-name APIuser --access-key-id "$key"
+                echo -e "${GREEN}  ✓ Access key deleted: $key${NC}"
+            done
+        else
+            echo "  No access keys to delete"
+        fi
+
+        # Delete service-specific credentials
+        echo "  Deleting service-specific credentials..."
+        SERVICE_CREDS=$(aws iam list-service-specific-credentials --user-name APIuser --query 'ServiceSpecificCredentials[].ServiceSpecificCredentialId' --output text 2>/dev/null || echo "")
+        if [ -n "$SERVICE_CREDS" ]; then
+            for cred in $SERVICE_CREDS; do
+                aws iam delete-service-specific-credential --user-name APIuser --service-specific-credential-id "$cred"
+                echo -e "${GREEN}  ✓ Service-specific credential deleted: $cred${NC}"
+            done
+        else
+            echo "  No service-specific credentials to delete"
+        fi
+
+        # Detach policies
+        echo "  Detaching policies..."
+        POLICIES=$(aws iam list-attached-user-policies --user-name APIuser --query 'AttachedPolicies[].PolicyArn' --output text)
+        if [ -n "$POLICIES" ]; then
+            for policy in $POLICIES; do
+                aws iam detach-user-policy --user-name APIuser --policy-arn "$policy"
+                echo -e "${GREEN}  ✓ Policy detached: $policy${NC}"
+            done
+        else
+            echo "  No policies to detach"
+        fi
+
+        # Delete user
+        echo "  Deleting user..."
+        if aws iam delete-user --user-name APIuser; then
+            echo -e "${GREEN}✓ IAM User 'APIuser' deleted successfully${NC}"
+            IAM_USER_DELETED=true
+        else
+            echo -e "${RED}✗ Failed to delete IAM User 'APIuser'${NC}"
+        fi
+    fi
+else
+    echo -e "${YELLOW}IAM User 'APIuser' does not exist. Skipping.${NC}"
+fi
+
+echo ""
+
+#############################################
 # Final Summary
 #############################################
 
@@ -390,6 +467,7 @@ echo -e "${YELLOW}========================================${NC}"
 echo ""
 echo -e "${GREEN}CloudFormation Stacks Deleted: $STACK_SUCCESS_COUNT${NC}"
 echo -e "${GREEN}AgentCore Runtimes Deleted:    $AGENT_SUCCESS_COUNT${NC}"
+echo -e "${GREEN}IAM User 'APIuser' Deleted:    $IAM_USER_DELETED${NC}"
 echo ""
 
 # Determine exit code
