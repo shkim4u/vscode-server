@@ -138,6 +138,7 @@ if [ "$SKIP_PROMPT" = false ]; then
     echo -e "${RED}  1. Delete CloudFormation stacks: $STACKS${NC}"
     echo -e "${RED}  2. Delete all AgentCore Runtimes in $AGENTCORE_REGION${NC}"
     echo -e "${RED}  3. Delete IAM User 'APIuser' (if exists)${NC}"
+    echo -e "${RED}  4. Delete S3 Bucket 'vscode-server-template-*' (if exists)${NC}"
     echo -e "${RED}This action cannot be undone!${NC}"
     echo ""
     read -p "$(echo -e ${RED}Are you sure you want to proceed? [y/N]: ${NC})" -n 1 -r
@@ -301,7 +302,7 @@ else
                 FAILED_AGENTS=()
 
                 # Process each agent
-                echo "$AGENTS_JSON" | jq -c '.agentRuntimes[]' | while read -r agent; do
+                while read -r agent; do
                     RUNTIME_ID=$(echo "$agent" | jq -r '.agentRuntimeId')
                     RUNTIME_NAME=$(echo "$agent" | jq -r '.agentRuntimeName // "N/A"')
 
@@ -325,7 +326,7 @@ else
                     fi
 
                     echo ""
-                done
+                done < <(echo "$AGENTS_JSON" | jq -c '.agentRuntimes[]')
             fi
         else
             echo -e "${YELLOW}Starting AgentCore cleanup process...${NC}"
@@ -337,7 +338,7 @@ else
             FAILED_AGENTS=()
 
             # Process each agent
-            echo "$AGENTS_JSON" | jq -c '.agentRuntimes[]' | while read -r agent; do
+            while read -r agent; do
                 RUNTIME_ID=$(echo "$agent" | jq -r '.agentRuntimeId')
                 RUNTIME_NAME=$(echo "$agent" | jq -r '.agentRuntimeName // "N/A"')
 
@@ -361,7 +362,7 @@ else
                 fi
 
                 echo ""
-            done
+            done < <(echo "$AGENTS_JSON" | jq -c '.agentRuntimes[]')
         fi
 
         # AgentCore cleanup summary
@@ -458,6 +459,67 @@ fi
 echo ""
 
 #############################################
+# Part 4: S3 Bucket Cleanup
+#############################################
+
+echo -e "${YELLOW}=== Part 4: S3 Bucket Cleanup ===${NC}"
+echo ""
+
+S3_BUCKET_DELETED=false
+S3_BUCKET_NAME="vscode-server-template-${ACCOUNT_ID}-${STACK_REGION}"
+
+if aws s3api head-bucket --bucket "$S3_BUCKET_NAME" 2>/dev/null; then
+    echo -e "${YELLOW}Found S3 Bucket: $S3_BUCKET_NAME${NC}"
+
+    PROCEED_S3=true
+    if [ "$SKIP_PROMPT" = false ]; then
+        read -p "$(echo -e ${RED}Do you want to delete the S3 Bucket \'$S3_BUCKET_NAME\'? [y/N]: ${NC})" -n 1 -r
+        echo ""
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            echo -e "${YELLOW}S3 Bucket cleanup skipped by user.${NC}"
+            PROCEED_S3=false
+        fi
+    fi
+
+    if [ "$PROCEED_S3" = true ]; then
+        echo -e "${YELLOW}Emptying S3 Bucket: $S3_BUCKET_NAME...${NC}"
+
+        # Delete all objects (including versioned objects)
+        if aws s3 rm "s3://${S3_BUCKET_NAME}" --recursive 2>&1; then
+            echo -e "${GREEN}  ✓ All objects deleted${NC}"
+        else
+            echo -e "${RED}  ✗ Failed to delete objects${NC}"
+        fi
+
+        # Delete all object versions and delete markers (for versioned buckets)
+        VERSIONS=$(aws s3api list-object-versions --bucket "$S3_BUCKET_NAME" --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' --output json 2>/dev/null)
+        if [ -n "$VERSIONS" ] && [ "$VERSIONS" != '{"Objects": null}' ] && [ "$VERSIONS" != "null" ]; then
+            aws s3api delete-objects --bucket "$S3_BUCKET_NAME" --delete "$VERSIONS" > /dev/null 2>&1
+            echo -e "${GREEN}  ✓ Object versions deleted${NC}"
+        fi
+
+        DELETE_MARKERS=$(aws s3api list-object-versions --bucket "$S3_BUCKET_NAME" --query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}' --output json 2>/dev/null)
+        if [ -n "$DELETE_MARKERS" ] && [ "$DELETE_MARKERS" != '{"Objects": null}' ] && [ "$DELETE_MARKERS" != "null" ]; then
+            aws s3api delete-objects --bucket "$S3_BUCKET_NAME" --delete "$DELETE_MARKERS" > /dev/null 2>&1
+            echo -e "${GREEN}  ✓ Delete markers removed${NC}"
+        fi
+
+        # Delete the bucket
+        echo "  Deleting bucket..."
+        if aws s3api delete-bucket --bucket "$S3_BUCKET_NAME" --region "$STACK_REGION" 2>&1; then
+            echo -e "${GREEN}✓ S3 Bucket '$S3_BUCKET_NAME' deleted successfully${NC}"
+            S3_BUCKET_DELETED=true
+        else
+            echo -e "${RED}✗ Failed to delete S3 Bucket '$S3_BUCKET_NAME'${NC}"
+        fi
+    fi
+else
+    echo -e "${YELLOW}S3 Bucket '$S3_BUCKET_NAME' does not exist. Skipping.${NC}"
+fi
+
+echo ""
+
+#############################################
 # Final Summary
 #############################################
 
@@ -468,6 +530,7 @@ echo ""
 echo -e "${GREEN}CloudFormation Stacks Deleted: $STACK_SUCCESS_COUNT${NC}"
 echo -e "${GREEN}AgentCore Runtimes Deleted:    $AGENT_SUCCESS_COUNT${NC}"
 echo -e "${GREEN}IAM User 'APIuser' Deleted:    $IAM_USER_DELETED${NC}"
+echo -e "${GREEN}S3 Bucket Deleted:             $S3_BUCKET_DELETED${NC}"
 echo ""
 
 # Determine exit code
