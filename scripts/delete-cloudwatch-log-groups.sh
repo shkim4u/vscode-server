@@ -17,6 +17,7 @@ delete_log_groups_by_prefix() {
         --region "$region" \
         --log-group-name-prefix "$prefix" \
         --query 'logGroups[].logGroupName' \
+        --no-paginate \
         --output text 2>/dev/null) || true
 
     if [ -z "$log_groups" ]; then
@@ -24,11 +25,13 @@ delete_log_groups_by_prefix() {
         return
     fi
 
-    for lg in $log_groups; do
+    echo "$log_groups" | tr '\t' '\n' | while read -r lg; do
+        [ -z "$lg" ] && continue
         echo "    Deleting: $lg"
         aws logs delete-log-group \
             --region "$region" \
-            --log-group-name "$lg" 2>/dev/null || echo "    WARN: Failed to delete $lg"
+            --log-group-name "$lg" 2>&1 || echo "    WARN: Failed to delete $lg"
+        sleep 0.2
     done
 }
 
