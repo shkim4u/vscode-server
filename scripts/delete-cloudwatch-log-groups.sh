@@ -53,7 +53,7 @@ delete_log_group_exact() {
     echo "  Deleting log group: ${name} (region: ${region})"
     if aws logs delete-log-group \
         --region "$region" \
-        --log-group-name "$name" 2>&1; then
+        --log-group-name "$name" 2>/dev/null; then
         sleep 0.5
         if aws logs describe-log-groups \
             --region "$region" \
