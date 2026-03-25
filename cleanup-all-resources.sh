@@ -519,21 +519,19 @@ fi
 
 echo ""
 
-#############################################
-# Final Summary
-#############################################
-
-echo -e "${YELLOW}========================================${NC}"
-echo -e "${YELLOW}Final Cleanup Summary${NC}"
-echo -e "${YELLOW}========================================${NC}"
-echo ""
-echo -e "${GREEN}CloudFormation Stacks Deleted: $STACK_SUCCESS_COUNT${NC}"
-echo -e "${GREEN}AgentCore Runtimes Deleted:    $AGENT_SUCCESS_COUNT${NC}"
-echo -e "${GREEN}IAM User 'APIuser' Deleted:    $IAM_USER_DELETED${NC}"
-echo -e "${GREEN}S3 Bucket Deleted:             $S3_BUCKET_DELETED${NC}"
-echo ""
-
 set -euo pipefail
+
+CW_DELETED_AP_NORTHEAST_2=0
+CW_DELETED_US_WEST_2=0
+
+increment_cw_counter() {
+    local region="$1"
+    if [ "$region" = "ap-northeast-2" ]; then
+        CW_DELETED_AP_NORTHEAST_2=$((CW_DELETED_AP_NORTHEAST_2 + 1))
+    elif [ "$region" = "us-west-2" ]; then
+        CW_DELETED_US_WEST_2=$((CW_DELETED_US_WEST_2 + 1))
+    fi
+}
 
 delete_log_groups_by_prefix() {
     local region="$1"
@@ -554,9 +552,13 @@ delete_log_groups_by_prefix() {
 
     for lg in $log_groups; do
         echo "    Deleting: $lg"
-        aws logs delete-log-group \
+        if aws logs delete-log-group \
             --region "$region" \
-            --log-group-name "$lg" 2>/dev/null || echo "    WARN: Failed to delete $lg"
+            --log-group-name "$lg" 2>/dev/null; then
+            increment_cw_counter "$region"
+        else
+            echo "    WARN: Failed to delete $lg"
+        fi
     done
 }
 
@@ -565,15 +567,17 @@ delete_log_group_exact() {
     local name="$2"
 
     echo "  Deleting log group: ${name} (region: ${region})"
-    aws logs delete-log-group \
+    if aws logs delete-log-group \
         --region "$region" \
-        --log-group-name "$name" 2>/dev/null || echo "    Not found or failed: $name"
+        --log-group-name "$name" 2>/dev/null; then
+        increment_cw_counter "$region"
+    else
+        echo "    Not found or failed: $name"
+    fi
 }
 
-echo "========================================"
-echo "CloudWatch Log Group Cleanup"
-echo "Profile: default"
-echo "========================================"
+echo -e "${YELLOW}=== Part 5: CloudWatch Log Group Cleanup ===${NC}"
+echo ""
 
 # --- ap-northeast-2 ---
 echo ""
@@ -598,6 +602,23 @@ echo ""
 echo "========================================"
 echo "CloudWatch Log Group Cleanup completed."
 echo "========================================"
+echo ""
+
+#############################################
+# Final Summary
+#############################################
+
+echo -e "${YELLOW}========================================${NC}"
+echo -e "${YELLOW}Final Cleanup Summary${NC}"
+echo -e "${YELLOW}========================================${NC}"
+echo ""
+echo -e "${GREEN}CloudFormation Stacks Deleted: $STACK_SUCCESS_COUNT${NC}"
+echo -e "${GREEN}AgentCore Runtimes Deleted:    $AGENT_SUCCESS_COUNT${NC}"
+echo -e "${GREEN}IAM User 'APIuser' Deleted:    $IAM_USER_DELETED${NC}"
+echo -e "${GREEN}S3 Bucket Deleted:             $S3_BUCKET_DELETED${NC}"
+echo -e "${GREEN}CW Log Groups Deleted (ap-northeast-2): $CW_DELETED_AP_NORTHEAST_2${NC}"
+echo -e "${GREEN}CW Log Groups Deleted (us-west-2):      $CW_DELETED_US_WEST_2${NC}"
+echo ""
 
 # Determine exit code
 TOTAL_FAILED=$((STACK_FAILED_COUNT + AGENT_FAILED_COUNT))
