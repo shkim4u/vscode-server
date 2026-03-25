@@ -558,6 +558,14 @@ delete_log_groups_by_prefix() {
             --region "$region" \
             --log-group-name "$lg" 2>&1; then
             increment_cw_counter "$region"
+            sleep 0.5
+            if aws logs describe-log-groups \
+                --region "$region" \
+                --log-group-name-prefix "$lg" \
+                --query "logGroups[?logGroupName=='$lg'].logGroupName" \
+                --output text 2>/dev/null | grep -q .; then
+                echo "    WARN: $lg was recreated by an active AWS service. Stop the service first."
+            fi
         else
             echo "    WARN: Failed to delete $lg"
         fi
@@ -588,6 +596,10 @@ delete_log_group_exact() {
 }
 
 echo -e "${YELLOW}=== Part 5: CloudWatch Log Group Cleanup ===${NC}"
+echo ""
+echo "참고: 일부 로그 그룹은 활성 AWS 서비스(예: Batch, Lambda)에 의해 재생성될 수 있습니다."
+echo "      삭제 실패 또는 재생성되더라도 무시해도 무방합니다."
+echo "      영구 삭제하려면 연관된 AWS 서비스를 먼저 중지하세요."
 echo ""
 
 # --- ap-northeast-2 ---
