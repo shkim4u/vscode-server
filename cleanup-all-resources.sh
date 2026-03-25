@@ -605,6 +605,63 @@ echo "========================================"
 echo ""
 
 #############################################
+# Part 6: SageMaker Resource Check (us-west-2)
+#############################################
+
+echo -e "${YELLOW}=== Part 6: SageMaker Resource Check (us-west-2) ===${NC}"
+echo ""
+
+SAGEMAKER_REGION="us-west-2"
+
+# --- Notebook Instances ---
+echo -e "${YELLOW}Checking SageMaker Notebook Instances...${NC}"
+NOTEBOOK_INSTANCES=$(aws sagemaker list-notebook-instances \
+    --region "$SAGEMAKER_REGION" \
+    --query 'NotebookInstances[].{Name:NotebookInstanceName,Status:NotebookInstanceStatus}' \
+    --output json 2>/dev/null) || NOTEBOOK_INSTANCES="[]"
+
+NOTEBOOK_COUNT=$(echo "$NOTEBOOK_INSTANCES" | jq 'length')
+if [ "$NOTEBOOK_COUNT" -gt 0 ]; then
+    echo -e "${RED}  Found $NOTEBOOK_COUNT Notebook Instance(s):${NC}"
+    echo "$NOTEBOOK_INSTANCES" | jq -r '.[] | "    - \(.Name) (Status: \(.Status))"'
+else
+    echo -e "${GREEN}  No Notebook Instances found.${NC}"
+fi
+echo ""
+
+# --- Training Jobs ---
+echo -e "${YELLOW}Checking SageMaker Training Jobs...${NC}"
+TRAINING_JOBS=$(aws sagemaker list-training-jobs \
+    --region "$SAGEMAKER_REGION" \
+    --query 'TrainingJobSummaries[].{Name:TrainingJobName,Status:TrainingJobStatus}' \
+    --output json 2>/dev/null) || TRAINING_JOBS="[]"
+
+TRAINING_COUNT=$(echo "$TRAINING_JOBS" | jq 'length')
+if [ "$TRAINING_COUNT" -gt 0 ]; then
+    echo -e "${RED}  Found $TRAINING_COUNT Training Job(s):${NC}"
+    echo "$TRAINING_JOBS" | jq -r '.[] | "    - \(.Name) (Status: \(.Status))"'
+else
+    echo -e "${GREEN}  No Training Jobs found.${NC}"
+fi
+echo ""
+
+# --- Inference Endpoints ---
+echo -e "${YELLOW}Checking SageMaker Inference Endpoints...${NC}"
+ENDPOINTS=$(aws sagemaker list-endpoints \
+    --region "$SAGEMAKER_REGION" \
+    --query 'Endpoints[].{Name:EndpointName,Status:EndpointStatus}' \
+    --output json 2>/dev/null) || ENDPOINTS="[]"
+
+ENDPOINT_COUNT=$(echo "$ENDPOINTS" | jq 'length')
+if [ "$ENDPOINT_COUNT" -gt 0 ]; then
+    echo -e "${RED}  Found $ENDPOINT_COUNT Inference Endpoint(s):${NC}"
+    echo "$ENDPOINTS" | jq -r '.[] | "    - \(.Name) (Status: \(.Status))"'
+else
+    echo -e "${GREEN}  No Inference Endpoints found.${NC}"
+fi
+echo ""
+
+#############################################
 # Final Summary
 #############################################
 
