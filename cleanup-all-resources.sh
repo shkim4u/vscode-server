@@ -572,8 +572,16 @@ delete_log_group_exact() {
     echo "  Deleting log group: ${name} (region: ${region})"
     if aws logs delete-log-group \
         --region "$region" \
-        --log-group-name "$name" 2>/dev/null; then
+        --log-group-name "$name" 2>&1; then
         increment_cw_counter "$region"
+        sleep 0.5
+        if aws logs describe-log-groups \
+            --region "$region" \
+            --log-group-name-prefix "$name" \
+            --query "logGroups[?logGroupName=='$name'].logGroupName" \
+            --output text 2>/dev/null | grep -q .; then
+            echo "    WARN: $name was recreated by an active AWS service. Stop the service first."
+        fi
     else
         echo "    Not found or failed: $name"
     fi
