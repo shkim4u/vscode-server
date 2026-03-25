@@ -30,7 +30,7 @@ delete_log_groups_by_prefix() {
         echo "    Deleting: $lg"
         if aws logs delete-log-group \
             --region "$region" \
-            --log-group-name "$lg" 2>&1; then
+            --log-group-name "$lg" 2>/dev/null; then
             sleep 0.5
             if aws logs describe-log-groups \
                 --region "$region" \
