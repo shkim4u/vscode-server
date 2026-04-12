@@ -1093,6 +1093,14 @@ Resources:
                   #!/bin/bash
                   echo "INFO: Starting UserData script execution"
 
+                  # Wait for apt locks to be released (cloud-init, unattended-upgrades, etc.)
+                  echo "INFO: Waiting for system apt processes to complete..."
+                  while sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || sudo fuser /var/lib/apt/lists/lock >/dev/null 2>&1; do
+                    echo "INFO: Waiting for other software managers to finish..."
+                    sleep 5
+                  done
+                  echo "INFO: System apt locks released, proceeding with setup"
+
                   # Install AWS CLI and jq
                   echo "INFO: Installing AWS CLI prerequisites and jq"
                   apt-get -o DPkg::Lock::Timeout=-1 update
@@ -1132,6 +1140,15 @@ Resources:
 
                   # Install Docker
                   echo "INFO: Installing Docker"
+
+                  # Wait for apt locks to be released (cloud-init, unattended-upgrades, etc.)
+                  echo "INFO: Waiting for apt locks to be released..."
+                  while sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || sudo fuser /var/lib/apt/lists/lock >/dev/null 2>&1; do
+                    echo "INFO: Waiting for other software managers to finish..."
+                    sleep 5
+                  done
+                  echo "INFO: apt locks released, proceeding with Docker installation"
+
                   DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=-1 install -y ca-certificates gnupg lsb-release
                   echo "INFO: Adding Docker GPG key"
                   install -m 0755 -d /etc/apt/keyrings
