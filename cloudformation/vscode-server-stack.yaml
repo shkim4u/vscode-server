@@ -1120,31 +1120,12 @@ Resources:
                   if [ -n "${AWS_ACCESS_KEY_ID}" ] && [ "${AWS_ACCESS_KEY_ID}" != "" ]; then
                     echo "INFO: Setting AWS credentials using Python to safely handle special characters"
                     sudo -u ubuntu mkdir -p /home/ubuntu/.aws
-                    # Use Python heredoc with CloudFormation variable substitution
-                    # The single quotes around 'PYTHON_CREDENTIALS_EOF' prevent bash from interpreting the heredoc
-                    # CloudFormation substitutes ${AWS_ACCESS_KEY_ID} and ${AWS_SECRET_ACCESS_KEY} before bash runs
-                    # Python triple-quoted strings safely handle any special characters
-                    python3 << 'PYTHON_CREDENTIALS_EOF'
-import pathlib
-import pwd
-import grp
-import os
-
-# CloudFormation-substituted values as Python raw strings
-access_key = """${AWS_ACCESS_KEY_ID}"""
-secret_key = """${AWS_SECRET_ACCESS_KEY}"""
-
-if access_key and secret_key:
-    creds_file = pathlib.Path('/home/ubuntu/.aws/credentials')
-    creds_file.write_text(f"""[default]
-aws_access_key_id = {access_key}
-aws_secret_access_key = {secret_key}
-""")
-    creds_file.chmod(0o600)
-    ubuntu_uid = pwd.getpwnam('ubuntu').pw_uid
-    ubuntu_gid = grp.getgrnam('ubuntu').gr_gid
-    os.chown(str(creds_file), ubuntu_uid, ubuntu_gid)
-PYTHON_CREDENTIALS_EOF
+                    # Use printf to write credentials to temp files (safe for all special characters)
+                    printf '%s' "${AWS_ACCESS_KEY_ID}" > /tmp/.aws_access_key_id
+                    printf '%s' "${AWS_SECRET_ACCESS_KEY}" > /tmp/.aws_secret_access_key
+                    # Python reads from files (no bash interpretation)
+                    python3 -c 'import pathlib, pwd, grp, os; access_key = pathlib.Path("/tmp/.aws_access_key_id").read_text(); secret_key = pathlib.Path("/tmp/.aws_secret_access_key").read_text(); creds = pathlib.Path("/home/ubuntu/.aws/credentials"); creds.write_text(f"[default]\naws_access_key_id = {access_key}\naws_secret_access_key = {secret_key}\n"); creds.chmod(0o600); os.chown(str(creds), pwd.getpwnam("ubuntu").pw_uid, grp.getgrnam("ubuntu").gr_gid)'
+                    rm -f /tmp/.aws_access_key_id /tmp/.aws_secret_access_key
                     echo "INFO: AWS credentials configured successfully"
                   else
                     echo "INFO: AWS Access Key ID not provided, skipping credentials configuration"
