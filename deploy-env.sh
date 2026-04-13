@@ -334,6 +334,7 @@ echo "Deploying CloudFormation stack..."
 echo "=========================================="
 
 # Deploy stack
+# Use printf to safely escape special characters in parameters
 aws cloudformation deploy \
     --stack-name "${STACK_NAME}" \
     --template-file /tmp/vscode-server-stack.yaml \
@@ -347,9 +348,9 @@ aws cloudformation deploy \
       ProjectName="${PROJECT_NAME}" \
       DeployProjectResource="${DEPLOY_PROJECT_RESOURCE}" \
       DeployInitMinimal="${DEPLOY_INIT_MINIMAL}" \
-      AWSAccessKeyId="${GENERATED_AWS_ACCESS_KEY_ID}" \
-      AWSSecretAccessKey="${GENERATED_AWS_SECRET_ACCESS_KEY}" \
-      AWSBearerTokenBedrock="${GENERATED_AWS_BEARER_TOKEN_BEDROCK}" \
+      AWSAccessKeyId="$(printf '%s' "${GENERATED_AWS_ACCESS_KEY_ID}")" \
+      AWSSecretAccessKey="$(printf '%s' "${GENERATED_AWS_SECRET_ACCESS_KEY}")" \
+      AWSBearerTokenBedrock="$(printf '%s' "${GENERATED_AWS_BEARER_TOKEN_BEDROCK}")" \
       OpenAIAPIKey="${OPENAI_API_KEY}" \
     --capabilities CAPABILITY_IAM \
     --region "${REGION}"

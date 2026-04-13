@@ -1116,26 +1116,27 @@ Resources:
                   aws --version
 
                   # Configure AWS CLI credentials
+                  # Write credentials directly to file to safely handle special characters
                   echo "INFO: Configuring AWS CLI credentials"
                   if [ -n "${AWS_ACCESS_KEY_ID}" ] && [ "${AWS_ACCESS_KEY_ID}" != "" ]; then
-                    echo "INFO: Setting AWS Access Key ID"
-                    sudo -u ubuntu aws configure set aws_access_key_id "${AWS_ACCESS_KEY_ID}"
+                    echo "INFO: Setting AWS credentials"
+                    sudo -u ubuntu mkdir -p /home/ubuntu/.aws
+                    # Use printf to write credentials file safely
+                    sudo -u ubuntu bash -c "printf '[default]\naws_access_key_id = %s\naws_secret_access_key = %s\n' \"\${AWS_ACCESS_KEY_ID}\" \"\${AWS_SECRET_ACCESS_KEY}\" > /home/ubuntu/.aws/credentials"
+                    sudo -u ubuntu chmod 600 /home/ubuntu/.aws/credentials
+                    echo "INFO: AWS credentials configured successfully"
                   else
-                    echo "INFO: AWS Access Key ID not provided, skipping"
-                  fi
-
-                  if [ -n "${AWS_SECRET_ACCESS_KEY}" ] && [ "${AWS_SECRET_ACCESS_KEY}" != "" ]; then
-                    echo "INFO: Setting AWS Secret Access Key"
-                    sudo -u ubuntu aws configure set aws_secret_access_key "${AWS_SECRET_ACCESS_KEY}"
-                  else
-                    echo "INFO: AWS Secret Access Key not provided, skipping"
+                    echo "INFO: AWS Access Key ID not provided, skipping credentials configuration"
                   fi
 
                   if [ -n "${REGION}" ] && [ "${REGION}" != "" ]; then
                     echo "INFO: Setting AWS region to ${REGION}"
-                    sudo -u ubuntu aws configure set region "${REGION}"
+                    sudo -u ubuntu mkdir -p /home/ubuntu/.aws
+                    sudo -u ubuntu bash -c "printf '[default]\nregion = %s\n' \"\${REGION}\" > /home/ubuntu/.aws/config"
+                    sudo -u ubuntu chmod 600 /home/ubuntu/.aws/config
+                    echo "INFO: AWS region configured successfully"
                   else
-                    echo "INFO: Region not provided, skipping"
+                    echo "INFO: Region not provided, skipping region configuration"
                   fi
 
                   # Install Docker
