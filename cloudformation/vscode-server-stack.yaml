@@ -1120,21 +1120,19 @@ Resources:
                   if [ -n "${AWS_ACCESS_KEY_ID}" ] && [ "${AWS_ACCESS_KEY_ID}" != "" ]; then
                     echo "INFO: Setting AWS credentials using Python to safely handle special characters"
                     sudo -u ubuntu mkdir -p /home/ubuntu/.aws
-                    # Use printf to write to temp files (handles special characters safely)
-                    printf '%s' "${AWS_ACCESS_KEY_ID}" > /tmp/aws_access_key_id.tmp
-                    printf '%s' "${AWS_SECRET_ACCESS_KEY}" > /tmp/aws_secret_access_key.tmp
-                    # Use Python to write credentials file - immune to shell special characters
+                    # Use Python heredoc with CloudFormation variable substitution
+                    # The single quotes around 'PYTHON_CREDENTIALS_EOF' prevent bash from interpreting the heredoc
+                    # CloudFormation substitutes ${AWS_ACCESS_KEY_ID} and ${AWS_SECRET_ACCESS_KEY} before bash runs
+                    # Python triple-quoted strings safely handle any special characters
                     python3 << 'PYTHON_CREDENTIALS_EOF'
 import pathlib
 import pwd
 import grp
 import os
 
-# Read from temp files
-with open('/tmp/aws_access_key_id.tmp') as f:
-    access_key = f.read()
-with open('/tmp/aws_secret_access_key.tmp') as f:
-    secret_key = f.read()
+# CloudFormation-substituted values as Python raw strings
+access_key = """${AWS_ACCESS_KEY_ID}"""
+secret_key = """${AWS_SECRET_ACCESS_KEY}"""
 
 if access_key and secret_key:
     creds_file = pathlib.Path('/home/ubuntu/.aws/credentials')
@@ -1147,8 +1145,6 @@ aws_secret_access_key = {secret_key}
     ubuntu_gid = grp.getgrnam('ubuntu').gr_gid
     os.chown(str(creds_file), ubuntu_uid, ubuntu_gid)
 PYTHON_CREDENTIALS_EOF
-                    # Clean up temp files
-                    rm -f /tmp/aws_access_key_id.tmp /tmp/aws_secret_access_key.tmp
                     echo "INFO: AWS credentials configured successfully"
                   else
                     echo "INFO: AWS Access Key ID not provided, skipping credentials configuration"
