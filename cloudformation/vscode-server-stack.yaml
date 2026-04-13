@@ -1116,14 +1116,39 @@ Resources:
                   aws --version
 
                   # Configure AWS CLI credentials
-                  # Write credentials directly to file to safely handle special characters
                   echo "INFO: Configuring AWS CLI credentials"
                   if [ -n "${AWS_ACCESS_KEY_ID}" ] && [ "${AWS_ACCESS_KEY_ID}" != "" ]; then
-                    echo "INFO: Setting AWS credentials"
+                    echo "INFO: Setting AWS credentials using Python to safely handle special characters"
                     sudo -u ubuntu mkdir -p /home/ubuntu/.aws
-                    # Use printf to write credentials file safely
-                    sudo -u ubuntu bash -c "printf '[default]\naws_access_key_id = %s\naws_secret_access_key = %s\n' \"\${AWS_ACCESS_KEY_ID}\" \"\${AWS_SECRET_ACCESS_KEY}\" > /home/ubuntu/.aws/credentials"
-                    sudo -u ubuntu chmod 600 /home/ubuntu/.aws/credentials
+                    # Use printf to write to temp files (handles special characters safely)
+                    printf '%s' "${AWS_ACCESS_KEY_ID}" > /tmp/aws_access_key_id.tmp
+                    printf '%s' "${AWS_SECRET_ACCESS_KEY}" > /tmp/aws_secret_access_key.tmp
+                    # Use Python to write credentials file - immune to shell special characters
+                    python3 << 'PYTHON_CREDENTIALS_EOF'
+import pathlib
+import pwd
+import grp
+import os
+
+# Read from temp files
+with open('/tmp/aws_access_key_id.tmp') as f:
+    access_key = f.read()
+with open('/tmp/aws_secret_access_key.tmp') as f:
+    secret_key = f.read()
+
+if access_key and secret_key:
+    creds_file = pathlib.Path('/home/ubuntu/.aws/credentials')
+    creds_file.write_text(f"""[default]
+aws_access_key_id = {access_key}
+aws_secret_access_key = {secret_key}
+""")
+    creds_file.chmod(0o600)
+    ubuntu_uid = pwd.getpwnam('ubuntu').pw_uid
+    ubuntu_gid = grp.getgrnam('ubuntu').gr_gid
+    os.chown(str(creds_file), ubuntu_uid, ubuntu_gid)
+PYTHON_CREDENTIALS_EOF
+                    # Clean up temp files
+                    rm -f /tmp/aws_access_key_id.tmp /tmp/aws_secret_access_key.tmp
                     echo "INFO: AWS credentials configured successfully"
                   else
                     echo "INFO: AWS Access Key ID not provided, skipping credentials configuration"
@@ -1131,12 +1156,9 @@ Resources:
 
                   if [ -n "${REGION}" ] && [ "${REGION}" != "" ]; then
                     echo "INFO: Setting AWS region to ${REGION}"
-                    sudo -u ubuntu mkdir -p /home/ubuntu/.aws
-                    sudo -u ubuntu bash -c "printf '[default]\nregion = %s\n' \"\${REGION}\" > /home/ubuntu/.aws/config"
-                    sudo -u ubuntu chmod 600 /home/ubuntu/.aws/config
-                    echo "INFO: AWS region configured successfully"
+                    sudo -u ubuntu aws configure set region "${REGION}"
                   else
-                    echo "INFO: Region not provided, skipping region configuration"
+                    echo "INFO: Region not provided, skipping"
                   fi
 
                   # Install Docker
