@@ -1243,18 +1243,18 @@ Resources:
                     if [ -n "${AWS_BEARER_TOKEN_BEDROCK}" ] && [ "${AWS_BEARER_TOKEN_BEDROCK}" != "" ]; then
                       if [ -n "${OPENAI_API_KEY}" ] && [ "${OPENAI_API_KEY}" != "" ]; then
                         echo "INFO: AWS Bearer Token and OpenAI API Key provided, configuring with both"
-                        sudo -i -u ubuntu bash -c "cd /home/ubuntu/${PROJECT_NAME} && ./configure-vscode-server.sh --aws-bearer-token-bedrock ${AWS_BEARER_TOKEN_BEDROCK} --openai-api-key ${OPENAI_API_KEY}"
+                        sudo -u ubuntu env AWS_BEARER_TOKEN_BEDROCK="${AWS_BEARER_TOKEN_BEDROCK}" OPENAI_API_KEY="${OPENAI_API_KEY}" PROJECT_NAME="${PROJECT_NAME}" bash -c 'cd /home/ubuntu/$PROJECT_NAME && ./configure-vscode-server.sh --aws-bearer-token-bedrock "$AWS_BEARER_TOKEN_BEDROCK" --openai-api-key "$OPENAI_API_KEY"'
                       else
                         echo "INFO: AWS Bearer Token provided, configuring with token (no OpenAI key)"
-                        sudo -i -u ubuntu bash -c "cd /home/ubuntu/${PROJECT_NAME} && ./configure-vscode-server.sh --aws-bearer-token-bedrock ${AWS_BEARER_TOKEN_BEDROCK}"
+                        sudo -u ubuntu env AWS_BEARER_TOKEN_BEDROCK="${AWS_BEARER_TOKEN_BEDROCK}" PROJECT_NAME="${PROJECT_NAME}" bash -c 'cd /home/ubuntu/$PROJECT_NAME && ./configure-vscode-server.sh --aws-bearer-token-bedrock "$AWS_BEARER_TOKEN_BEDROCK"'
                       fi
                     else
                       if [ -n "${OPENAI_API_KEY}" ] && [ "${OPENAI_API_KEY}" != "" ]; then
                         echo "INFO: OpenAI API Key provided, configuring with key (no AWS Bearer Token)"
-                        sudo -i -u ubuntu bash -c "cd /home/ubuntu/${PROJECT_NAME} && ./configure-vscode-server.sh --openai-api-key ${OPENAI_API_KEY}"
+                        sudo -u ubuntu env OPENAI_API_KEY="${OPENAI_API_KEY}" PROJECT_NAME="${PROJECT_NAME}" bash -c 'cd /home/ubuntu/$PROJECT_NAME && ./configure-vscode-server.sh --openai-api-key "$OPENAI_API_KEY"'
                       else
                         echo "INFO: No AWS Bearer Token or OpenAI API Key provided, configuring without tokens"
-                        sudo -i -u ubuntu bash -c "cd /home/ubuntu/${PROJECT_NAME} && ./configure-vscode-server.sh"
+                        sudo -u ubuntu env PROJECT_NAME="${PROJECT_NAME}" bash -c 'cd /home/ubuntu/$PROJECT_NAME && ./configure-vscode-server.sh'
                       fi
                     fi
                   else
