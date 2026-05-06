@@ -2,7 +2,7 @@
 
 # Reset Script for IAM User 'mspuser'
 # This script deletes all Access Keys, Bedrock Bearer Tokens (service-specific credentials),
-# and resets the console login password for the 'mspuser' IAM user.
+# resets the console login password, and deactivates/deletes all MFA devices for the 'mspuser' IAM user.
 # The user itself is NOT deleted.
 
 set -e
@@ -91,6 +91,7 @@ if [ "$SKIP_PROMPT" = false ]; then
     echo -e "${RED}  1. Delete all Access Keys for '${IAM_USER}'${NC}"
     echo -e "${RED}  2. Delete all Bedrock Bearer Tokens (service-specific credentials) for '${IAM_USER}'${NC}"
     echo -e "${RED}  3. Delete the console login password for '${IAM_USER}'${NC}"
+    echo -e "${RED}  4. Deactivate and delete all MFA devices for '${IAM_USER}'${NC}"
     echo -e "${RED}The user '${IAM_USER}' itself will NOT be deleted.${NC}"
     echo ""
     read -p "$(echo -e ${RED}Are you sure you want to proceed? [y/N]: ${NC})" -n 1 -r
@@ -106,6 +107,7 @@ fi
 ACCESS_KEYS_DELETED=0
 SERVICE_CREDS_DELETED=0
 LOGIN_PROFILE_DELETED=false
+MFA_DEVICES_DELETED=0
 
 #############################################
 # Step 1: Delete all Access Keys
@@ -169,6 +171,40 @@ fi
 echo ""
 
 #############################################
+# Step 4: Deactivate and Delete MFA Devices
+#############################################
+
+echo -e "${YELLOW}=== Step 4: Deactivate and Delete MFA Devices ===${NC}"
+echo ""
+
+MFA_DEVICES=$(aws iam list-mfa-devices --user-name "$IAM_USER" --query 'MFADevices[].SerialNumber' --output text 2>/dev/null || echo "")
+if [ -n "$MFA_DEVICES" ]; then
+    for device in $MFA_DEVICES; do
+        # Deactivate MFA device
+        if aws iam deactivate-mfa-device --user-name "$IAM_USER" --serial-number "$device" 2>/dev/null; then
+            echo -e "${GREEN}  ✓ MFA device deactivated: $device${NC}"
+
+            # If it's a virtual MFA device (contains 'mfa/' in the ARN), delete it
+            if [[ "$device" == *"mfa/"* ]]; then
+                if aws iam delete-virtual-mfa-device --serial-number "$device" 2>/dev/null; then
+                    echo -e "${GREEN}  ✓ Virtual MFA device deleted: $device${NC}"
+                else
+                    echo -e "${YELLOW}  ⚠ Virtual MFA device deactivated but could not be deleted: $device${NC}"
+                fi
+            fi
+
+            MFA_DEVICES_DELETED=$((MFA_DEVICES_DELETED + 1))
+        else
+            echo -e "${RED}  ✗ Failed to deactivate MFA device: $device${NC}"
+        fi
+    done
+else
+    echo "  No MFA devices to deactivate"
+fi
+
+echo ""
+
+#############################################
 # Summary
 #############################################
 
@@ -179,5 +215,6 @@ echo ""
 echo -e "${GREEN}Access Keys Deleted:               $ACCESS_KEYS_DELETED${NC}"
 echo -e "${GREEN}Service-Specific Credentials Deleted: $SERVICE_CREDS_DELETED${NC}"
 echo -e "${GREEN}Console Login Password Deleted:     $LOGIN_PROFILE_DELETED${NC}"
+echo -e "${GREEN}MFA Devices Deactivated/Deleted:   $MFA_DEVICES_DELETED${NC}"
 echo ""
 echo -e "${GREEN}Reset operations completed successfully!${NC}"
