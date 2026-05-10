@@ -139,6 +139,8 @@ if [ "$SKIP_PROMPT" = false ]; then
     echo -e "${RED}  2. Delete all AgentCore Runtimes in $AGENTCORE_REGION${NC}"
     echo -e "${RED}  3. Delete IAM User 'APIuser' (if exists)${NC}"
     echo -e "${RED}  4. Delete S3 Bucket 'vscode-server-template-*' (if exists)${NC}"
+    echo -e "${RED}  5. Delete CloudWatch Log Groups${NC}"
+    echo -e "${RED}  6. Delete images from CDK ECR repositories (repositories will be kept)${NC}"
     echo -e "${RED}This action cannot be undone!${NC}"
     echo ""
     read -p "$(echo -e ${RED}Are you sure you want to proceed? [y/N]: ${NC})" -n 1 -r
@@ -628,10 +630,98 @@ echo "========================================"
 echo ""
 
 #############################################
-# Part 6: SageMaker Resource Check (us-west-2)
+# Part 6: CDK ECR Repository Image Cleanup
 #############################################
 
-echo -e "${YELLOW}=== Part 6: SageMaker Resource Check (us-west-2) ===${NC}"
+echo -e "${YELLOW}=== Part 6: CDK ECR Repository Image Cleanup ===${NC}"
+echo ""
+
+ECR_IMAGES_DELETED=0
+
+# Find CDK ECR repositories (pattern: cdk-*-container-assets-*)
+echo "Searching for CDK ECR repositories in $STACK_REGION..."
+CDK_REPOS=$(aws ecr describe-repositories \
+    --region "$STACK_REGION" \
+    --query 'repositories[?starts_with(repositoryName, `cdk-`) && contains(repositoryName, `container-assets`)].repositoryName' \
+    --output text 2>/dev/null) || CDK_REPOS=""
+
+if [ -z "$CDK_REPOS" ]; then
+    echo -e "${YELLOW}No CDK ECR repositories found. Skipping.${NC}"
+else
+    echo -e "${YELLOW}Found CDK ECR repository(s):${NC}"
+    for repo in $CDK_REPOS; do
+        echo "  - $repo"
+    done
+    echo ""
+
+    PROCEED_ECR=true
+    if [ "$SKIP_PROMPT" = false ]; then
+        echo -e "${RED}NOTE: Only images will be deleted. Repositories will be kept for CDK usage.${NC}"
+        read -p "$(echo -e ${YELLOW}Do you want to delete images from CDK ECR repositories? [y/N]: ${NC})" -n 1 -r
+        echo ""
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            echo -e "${YELLOW}CDK ECR image cleanup skipped by user.${NC}"
+            PROCEED_ECR=false
+        fi
+    fi
+
+    if [ "$PROCEED_ECR" = true ]; then
+        for repo in $CDK_REPOS; do
+            echo -e "${YELLOW}Processing repository: $repo${NC}"
+
+            # List all image IDs in the repository
+            IMAGE_IDS=$(aws ecr list-images \
+                --region "$STACK_REGION" \
+                --repository-name "$repo" \
+                --query 'imageIds[*]' \
+                --output json 2>/dev/null) || IMAGE_IDS="[]"
+
+            IMAGE_COUNT=$(echo "$IMAGE_IDS" | jq 'length')
+
+            if [ "$IMAGE_COUNT" -eq 0 ]; then
+                echo "  No images to delete."
+            else
+                echo "  Found $IMAGE_COUNT image(s). Deleting..."
+
+                # Delete all images in the repository
+                DELETE_RESULT=$(aws ecr batch-delete-image \
+                    --region "$STACK_REGION" \
+                    --repository-name "$repo" \
+                    --image-ids "$IMAGE_IDS" \
+                    --output json 2>&1)
+
+                if [ $? -eq 0 ]; then
+                    DELETED_COUNT=$(echo "$DELETE_RESULT" | jq '.imageIds | length')
+                    FAILED_COUNT=$(echo "$DELETE_RESULT" | jq '.failures | length')
+
+                    if [ "$DELETED_COUNT" -gt 0 ]; then
+                        echo -e "${GREEN}  ✓ Successfully deleted $DELETED_COUNT image(s)${NC}"
+                        ECR_IMAGES_DELETED=$((ECR_IMAGES_DELETED + DELETED_COUNT))
+                    fi
+
+                    if [ "$FAILED_COUNT" -gt 0 ]; then
+                        echo -e "${RED}  ✗ Failed to delete $FAILED_COUNT image(s)${NC}"
+                        echo "$DELETE_RESULT" | jq -r '.failures[] | "    Error: \(.failureReason) (ImageId: \(.imageId.imageDigest // .imageId.imageTag // "unknown"))"'
+                    fi
+                else
+                    echo -e "${RED}  ✗ Failed to delete images from $repo${NC}"
+                    echo "  Error: $DELETE_RESULT"
+                fi
+            fi
+            echo ""
+        done
+
+        echo -e "${GREEN}Total images deleted from CDK ECR repositories: $ECR_IMAGES_DELETED${NC}"
+    fi
+fi
+
+echo ""
+
+#############################################
+# Part 7: SageMaker Resource Check (us-west-2)
+#############################################
+
+echo -e "${YELLOW}=== Part 7: SageMaker Resource Check (us-west-2) ===${NC}"
 echo ""
 
 SAGEMAKER_REGION="us-west-2"
@@ -698,6 +788,7 @@ echo -e "${GREEN}IAM User 'APIuser' Deleted:    $IAM_USER_DELETED${NC}"
 echo -e "${GREEN}S3 Bucket Deleted:             $S3_BUCKET_DELETED${NC}"
 echo -e "${GREEN}CW Log Groups Deleted (ap-northeast-2): $CW_DELETED_AP_NORTHEAST_2${NC}"
 echo -e "${GREEN}CW Log Groups Deleted (us-west-2):      $CW_DELETED_US_WEST_2${NC}"
+echo -e "${GREEN}CDK ECR Images Deleted:        $ECR_IMAGES_DELETED${NC}"
 echo ""
 
 # Determine exit code
