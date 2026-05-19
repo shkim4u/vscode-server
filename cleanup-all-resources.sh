@@ -419,7 +419,7 @@ else
         echo ""
 
         # Display memories
-        echo "$MEMORIES_JSON" | jq -r '.memories[] | "  - Memory ID: \(.memoryId), ARN: \(.memoryArn)"'
+        echo "$MEMORIES_JSON" | jq -r '.memories[] | "  - Memory ID: \(.id), ARN: \(.arn)"'
         echo ""
 
         # Additional confirmation for AgentCore Memory (if not skipped globally)
@@ -440,8 +440,8 @@ else
 
             # Process each memory
             while read -r memory; do
-                MEMORY_ID=$(echo "$memory" | jq -r '.memoryId')
-                MEMORY_ARN=$(echo "$memory" | jq -r '.memoryArn')
+                MEMORY_ID=$(echo "$memory" | jq -r '.id')
+                MEMORY_ARN=$(echo "$memory" | jq -r '.arn')
 
                 echo -e "${YELLOW}Deleting AgentCore Memory: $MEMORY_ID${NC}"
 
