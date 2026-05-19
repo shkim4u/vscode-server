@@ -136,7 +136,7 @@ echo ""
 if [ "$SKIP_PROMPT" = false ]; then
     echo -e "${RED}WARNING: This script will:${NC}"
     echo -e "${RED}  1. Delete CloudFormation stacks: $STACKS${NC}"
-    echo -e "${RED}  2. Delete all AgentCore Runtimes in $AGENTCORE_REGION${NC}"
+    echo -e "${RED}  2. Delete all AgentCore Runtimes and Memories in $AGENTCORE_REGION${NC}"
     echo -e "${RED}  3. Delete IAM User 'APIuser' (if exists)${NC}"
     echo -e "${RED}  4. Delete S3 Bucket 'vscode-server-template-*' (if exists)${NC}"
     echo -e "${RED}  5. Delete CloudWatch Log Groups${NC}"
@@ -245,10 +245,10 @@ fi
 echo ""
 
 #############################################
-# Part 2: AgentCore Runtime Cleanup
+# Part 2a: AgentCore Runtime and Memory Cleanup
 #############################################
 
-echo -e "${YELLOW}=== Part 2: AgentCore Runtime Cleanup ===${NC}"
+echo -e "${YELLOW}=== Part 2: AgentCore Runtime and Memory Cleanup ===${NC}"
 echo ""
 
 # List all AgentCore Runtimes
@@ -377,6 +377,105 @@ else
             echo -e "${RED}Failed runtimes:${NC}"
             for failed_agent in "${FAILED_AGENTS[@]}"; do
                 echo -e "  ${RED}- $failed_agent${NC}"
+            done
+        fi
+    fi
+fi
+
+echo ""
+
+#############################################
+# Part 2b: AgentCore Memory Cleanup
+#############################################
+
+echo -e "${YELLOW}=== AgentCore Memory Cleanup ===${NC}"
+echo ""
+
+MEMORY_SUCCESS_COUNT=0
+MEMORY_FAILED_COUNT=0
+FAILED_MEMORIES=()
+
+# List all AgentCore Memories
+echo "Querying AgentCore Memory API in $AGENTCORE_REGION..."
+MEMORIES_JSON=$(aws bedrock-agentcore-control list-memories \
+    --region "$AGENTCORE_REGION" \
+    --output json 2>&1)
+
+if [ $? -ne 0 ]; then
+    echo -e "${RED}Error: Failed to list AgentCore Memories${NC}"
+    echo "Error details: $MEMORIES_JSON"
+    echo ""
+    echo "Possible causes:"
+    echo "  1. Insufficient permissions to list memories"
+    echo "  2. AgentCore service not available in region"
+else
+    # Parse memory count
+    MEMORY_COUNT=$(echo "$MEMORIES_JSON" | jq -r '.memories | length')
+
+    if [ "$MEMORY_COUNT" -eq 0 ]; then
+        echo -e "${YELLOW}No AgentCore Memories found. Nothing to delete.${NC}"
+    else
+        echo -e "${YELLOW}Found $MEMORY_COUNT AgentCore Memory(ies) to delete:${NC}"
+        echo ""
+
+        # Display memories
+        echo "$MEMORIES_JSON" | jq -r '.memories[] | "  - Memory ID: \(.memoryId), ARN: \(.memoryArn)"'
+        echo ""
+
+        # Additional confirmation for AgentCore Memory (if not skipped globally)
+        PROCEED_MEMORY=true
+        if [ "$SKIP_PROMPT" = false ]; then
+            read -p "$(echo -e ${RED}Proceed with deleting ALL AgentCore Memories? [y/N]: ${NC})" -n 1 -r
+            echo ""
+
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                echo -e "${YELLOW}AgentCore Memory cleanup skipped by user.${NC}"
+                PROCEED_MEMORY=false
+            fi
+        fi
+
+        if [ "$PROCEED_MEMORY" = true ]; then
+            echo -e "${YELLOW}Starting AgentCore Memory cleanup process...${NC}"
+            echo ""
+
+            # Process each memory
+            while read -r memory; do
+                MEMORY_ID=$(echo "$memory" | jq -r '.memoryId')
+                MEMORY_ARN=$(echo "$memory" | jq -r '.memoryArn')
+
+                echo -e "${YELLOW}Deleting AgentCore Memory: $MEMORY_ID${NC}"
+
+                # Delete AgentCore Memory
+                DELETE_RESULT=$(aws bedrock-agentcore-control delete-memory \
+                    --memory-id "$MEMORY_ID" \
+                    --region "$AGENTCORE_REGION" \
+                    2>&1)
+
+                # Check if deletion was successful
+                if [ $? -eq 0 ]; then
+                    echo -e "${GREEN}✓ Successfully deleted AgentCore Memory: $MEMORY_ID${NC}"
+                    MEMORY_SUCCESS_COUNT=$((MEMORY_SUCCESS_COUNT + 1))
+                else
+                    echo -e "${RED}✗ Failed to delete AgentCore Memory: $MEMORY_ID${NC}"
+                    echo "  Error: $DELETE_RESULT"
+                    MEMORY_FAILED_COUNT=$((MEMORY_FAILED_COUNT + 1))
+                    FAILED_MEMORIES+=("$MEMORY_ID")
+                fi
+
+                echo ""
+            done < <(echo "$MEMORIES_JSON" | jq -c '.memories[]')
+        fi
+
+        # AgentCore Memory cleanup summary
+        echo -e "${YELLOW}=== AgentCore Memory Cleanup Summary ===${NC}"
+        echo -e "${GREEN}Successfully deleted: $MEMORY_SUCCESS_COUNT AgentCore Memory(ies)${NC}"
+
+        if [ $MEMORY_FAILED_COUNT -gt 0 ]; then
+            echo -e "${RED}Failed to delete: $MEMORY_FAILED_COUNT AgentCore Memory(ies)${NC}"
+            echo ""
+            echo -e "${RED}Failed memories:${NC}"
+            for failed_memory in "${FAILED_MEMORIES[@]}"; do
+                echo -e "  ${RED}- $failed_memory${NC}"
             done
         fi
     fi
@@ -784,6 +883,7 @@ echo -e "${YELLOW}========================================${NC}"
 echo ""
 echo -e "${GREEN}CloudFormation Stacks Deleted: $STACK_SUCCESS_COUNT${NC}"
 echo -e "${GREEN}AgentCore Runtimes Deleted:    $AGENT_SUCCESS_COUNT${NC}"
+echo -e "${GREEN}AgentCore Memories Deleted:    $MEMORY_SUCCESS_COUNT${NC}"
 echo -e "${GREEN}IAM User 'APIuser' Deleted:    $IAM_USER_DELETED${NC}"
 echo -e "${GREEN}S3 Bucket Deleted:             $S3_BUCKET_DELETED${NC}"
 echo -e "${GREEN}CW Log Groups Deleted (ap-northeast-2): $CW_DELETED_AP_NORTHEAST_2${NC}"
@@ -792,7 +892,7 @@ echo -e "${GREEN}CDK ECR Images Deleted:        $ECR_IMAGES_DELETED${NC}"
 echo ""
 
 # Determine exit code
-TOTAL_FAILED=$((STACK_FAILED_COUNT + AGENT_FAILED_COUNT))
+TOTAL_FAILED=$((STACK_FAILED_COUNT + AGENT_FAILED_COUNT + MEMORY_FAILED_COUNT))
 if [ $TOTAL_FAILED -gt 0 ]; then
     echo -e "${RED}Total Failed Operations: $TOTAL_FAILED${NC}"
     exit 1
