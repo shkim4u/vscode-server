@@ -141,6 +141,7 @@ if [ "$SKIP_PROMPT" = false ]; then
     echo -e "${RED}  4. Delete S3 Bucket 'vscode-server-template-*' (if exists)${NC}"
     echo -e "${RED}  5. Delete CloudWatch Log Groups${NC}"
     echo -e "${RED}  6. Delete images from CDK ECR repositories (repositories will be kept)${NC}"
+    echo -e "${RED}  7. Delete SageMaker resources (Endpoints, Models, Notebooks, etc.) in us-west-2${NC}"
     echo -e "${RED}This action cannot be undone!${NC}"
     echo ""
     read -p "$(echo -e ${RED}Are you sure you want to proceed? [y/N]: ${NC})" -n 1 -r
@@ -817,45 +818,18 @@ fi
 echo ""
 
 #############################################
-# Part 7: SageMaker Resource Check (us-west-2)
+# Part 7: SageMaker Resource Cleanup (us-west-2)
 #############################################
 
-echo -e "${YELLOW}=== Part 7: SageMaker Resource Check (us-west-2) ===${NC}"
+echo -e "${YELLOW}=== Part 7: SageMaker Resource Cleanup (us-west-2) ===${NC}"
 echo ""
 
 SAGEMAKER_REGION="us-west-2"
-
-# --- Notebook Instances ---
-echo -e "${YELLOW}Checking SageMaker Notebook Instances...${NC}"
-NOTEBOOK_INSTANCES=$(aws sagemaker list-notebook-instances \
-    --region "$SAGEMAKER_REGION" \
-    --query 'NotebookInstances[].{Name:NotebookInstanceName,Status:NotebookInstanceStatus}' \
-    --output json 2>/dev/null) || NOTEBOOK_INSTANCES="[]"
-
-NOTEBOOK_COUNT=$(echo "$NOTEBOOK_INSTANCES" | jq 'length')
-if [ "$NOTEBOOK_COUNT" -gt 0 ]; then
-    echo -e "${RED}  Found $NOTEBOOK_COUNT Notebook Instance(s):${NC}"
-    echo "$NOTEBOOK_INSTANCES" | jq -r '.[] | "    - \(.Name) (Status: \(.Status))"'
-else
-    echo -e "${GREEN}  No Notebook Instances found.${NC}"
-fi
-echo ""
-
-# --- Training Jobs ---
-echo -e "${YELLOW}Checking SageMaker Training Jobs...${NC}"
-TRAINING_JOBS=$(aws sagemaker list-training-jobs \
-    --region "$SAGEMAKER_REGION" \
-    --query 'TrainingJobSummaries[].{Name:TrainingJobName,Status:TrainingJobStatus}' \
-    --output json 2>/dev/null) || TRAINING_JOBS="[]"
-
-TRAINING_COUNT=$(echo "$TRAINING_JOBS" | jq 'length')
-if [ "$TRAINING_COUNT" -gt 0 ]; then
-    echo -e "${RED}  Found $TRAINING_COUNT Training Job(s):${NC}"
-    echo "$TRAINING_JOBS" | jq -r '.[] | "    - \(.Name) (Status: \(.Status))"'
-else
-    echo -e "${GREEN}  No Training Jobs found.${NC}"
-fi
-echo ""
+SAGEMAKER_ENDPOINT_DELETED=0
+SAGEMAKER_ENDPOINT_CONFIG_DELETED=0
+SAGEMAKER_MODEL_DELETED=0
+SAGEMAKER_NOTEBOOK_DELETED=0
+SAGEMAKER_TRAINING_STOPPED=0
 
 # --- Inference Endpoints ---
 echo -e "${YELLOW}Checking SageMaker Inference Endpoints...${NC}"
@@ -868,9 +842,232 @@ ENDPOINT_COUNT=$(echo "$ENDPOINTS" | jq 'length')
 if [ "$ENDPOINT_COUNT" -gt 0 ]; then
     echo -e "${RED}  Found $ENDPOINT_COUNT Inference Endpoint(s):${NC}"
     echo "$ENDPOINTS" | jq -r '.[] | "    - \(.Name) (Status: \(.Status))"'
+    echo ""
+
+    PROCEED_ENDPOINTS=true
+    if [ "$SKIP_PROMPT" = false ]; then
+        read -p "$(echo -e ${RED}Do you want to delete all SageMaker Endpoints? [y/N]: ${NC})" -n 1 -r
+        echo ""
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            echo -e "${YELLOW}Endpoint deletion skipped by user.${NC}"
+            PROCEED_ENDPOINTS=false
+        fi
+    fi
+
+    if [ "$PROCEED_ENDPOINTS" = true ]; then
+        while read -r endpoint; do
+            ENDPOINT_NAME=$(echo "$endpoint" | jq -r '.Name')
+            echo -e "${YELLOW}Deleting Endpoint: $ENDPOINT_NAME${NC}"
+
+            if aws sagemaker delete-endpoint \
+                --endpoint-name "$ENDPOINT_NAME" \
+                --region "$SAGEMAKER_REGION" 2>&1; then
+                echo -e "${GREEN}  ✓ Endpoint deleted: $ENDPOINT_NAME${NC}"
+                SAGEMAKER_ENDPOINT_DELETED=$((SAGEMAKER_ENDPOINT_DELETED + 1))
+            else
+                echo -e "${RED}  ✗ Failed to delete endpoint: $ENDPOINT_NAME${NC}"
+            fi
+        done < <(echo "$ENDPOINTS" | jq -c '.[]')
+    fi
 else
     echo -e "${GREEN}  No Inference Endpoints found.${NC}"
 fi
+echo ""
+
+# --- Endpoint Configurations ---
+echo -e "${YELLOW}Checking SageMaker Endpoint Configurations...${NC}"
+ENDPOINT_CONFIGS=$(aws sagemaker list-endpoint-configs \
+    --region "$SAGEMAKER_REGION" \
+    --query 'EndpointConfigs[].EndpointConfigName' \
+    --output json 2>/dev/null) || ENDPOINT_CONFIGS="[]"
+
+CONFIG_COUNT=$(echo "$ENDPOINT_CONFIGS" | jq 'length')
+if [ "$CONFIG_COUNT" -gt 0 ]; then
+    echo -e "${RED}  Found $CONFIG_COUNT Endpoint Configuration(s)${NC}"
+
+    PROCEED_CONFIGS=true
+    if [ "$SKIP_PROMPT" = false ]; then
+        read -p "$(echo -e ${RED}Do you want to delete all Endpoint Configurations? [y/N]: ${NC})" -n 1 -r
+        echo ""
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            echo -e "${YELLOW}Endpoint Configuration deletion skipped by user.${NC}"
+            PROCEED_CONFIGS=false
+        fi
+    fi
+
+    if [ "$PROCEED_CONFIGS" = true ]; then
+        echo "$ENDPOINT_CONFIGS" | jq -r '.[]' | while read -r config_name; do
+            [ -z "$config_name" ] && continue
+            echo -e "${YELLOW}Deleting Endpoint Config: $config_name${NC}"
+
+            if aws sagemaker delete-endpoint-config \
+                --endpoint-config-name "$config_name" \
+                --region "$SAGEMAKER_REGION" 2>&1; then
+                echo -e "${GREEN}  ✓ Endpoint Config deleted: $config_name${NC}"
+                SAGEMAKER_ENDPOINT_CONFIG_DELETED=$((SAGEMAKER_ENDPOINT_CONFIG_DELETED + 1))
+            else
+                echo -e "${RED}  ✗ Failed to delete config: $config_name${NC}"
+            fi
+        done
+    fi
+else
+    echo -e "${GREEN}  No Endpoint Configurations found.${NC}"
+fi
+echo ""
+
+# --- Models ---
+echo -e "${YELLOW}Checking SageMaker Models...${NC}"
+MODELS=$(aws sagemaker list-models \
+    --region "$SAGEMAKER_REGION" \
+    --query 'Models[].ModelName' \
+    --output json 2>/dev/null) || MODELS="[]"
+
+MODEL_COUNT=$(echo "$MODELS" | jq 'length')
+if [ "$MODEL_COUNT" -gt 0 ]; then
+    echo -e "${RED}  Found $MODEL_COUNT Model(s)${NC}"
+
+    PROCEED_MODELS=true
+    if [ "$SKIP_PROMPT" = false ]; then
+        read -p "$(echo -e ${RED}Do you want to delete all SageMaker Models? [y/N]: ${NC})" -n 1 -r
+        echo ""
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            echo -e "${YELLOW}Model deletion skipped by user.${NC}"
+            PROCEED_MODELS=false
+        fi
+    fi
+
+    if [ "$PROCEED_MODELS" = true ]; then
+        echo "$MODELS" | jq -r '.[]' | while read -r model_name; do
+            [ -z "$model_name" ] && continue
+            echo -e "${YELLOW}Deleting Model: $model_name${NC}"
+
+            if aws sagemaker delete-model \
+                --model-name "$model_name" \
+                --region "$SAGEMAKER_REGION" 2>&1; then
+                echo -e "${GREEN}  ✓ Model deleted: $model_name${NC}"
+                SAGEMAKER_MODEL_DELETED=$((SAGEMAKER_MODEL_DELETED + 1))
+            else
+                echo -e "${RED}  ✗ Failed to delete model: $model_name${NC}"
+            fi
+        done
+    fi
+else
+    echo -e "${GREEN}  No Models found.${NC}"
+fi
+echo ""
+
+# --- Notebook Instances ---
+echo -e "${YELLOW}Checking SageMaker Notebook Instances...${NC}"
+NOTEBOOK_INSTANCES=$(aws sagemaker list-notebook-instances \
+    --region "$SAGEMAKER_REGION" \
+    --query 'NotebookInstances[].{Name:NotebookInstanceName,Status:NotebookInstanceStatus}' \
+    --output json 2>/dev/null) || NOTEBOOK_INSTANCES="[]"
+
+NOTEBOOK_COUNT=$(echo "$NOTEBOOK_INSTANCES" | jq 'length')
+if [ "$NOTEBOOK_COUNT" -gt 0 ]; then
+    echo -e "${RED}  Found $NOTEBOOK_COUNT Notebook Instance(s):${NC}"
+    echo "$NOTEBOOK_INSTANCES" | jq -r '.[] | "    - \(.Name) (Status: \(.Status))"'
+    echo ""
+
+    PROCEED_NOTEBOOKS=true
+    if [ "$SKIP_PROMPT" = false ]; then
+        read -p "$(echo -e ${RED}Do you want to delete all Notebook Instances? [y/N]: ${NC})" -n 1 -r
+        echo ""
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            echo -e "${YELLOW}Notebook Instance deletion skipped by user.${NC}"
+            PROCEED_NOTEBOOKS=false
+        fi
+    fi
+
+    if [ "$PROCEED_NOTEBOOKS" = true ]; then
+        while read -r notebook; do
+            NOTEBOOK_NAME=$(echo "$notebook" | jq -r '.Name')
+            NOTEBOOK_STATUS=$(echo "$notebook" | jq -r '.Status')
+
+            echo -e "${YELLOW}Processing Notebook: $NOTEBOOK_NAME (Status: $NOTEBOOK_STATUS)${NC}"
+
+            # Stop if running
+            if [ "$NOTEBOOK_STATUS" = "InService" ]; then
+                echo "  Stopping notebook instance..."
+                if aws sagemaker stop-notebook-instance \
+                    --notebook-instance-name "$NOTEBOOK_NAME" \
+                    --region "$SAGEMAKER_REGION" 2>&1; then
+                    echo -e "${GREEN}  ✓ Stop initiated${NC}"
+                    echo "  Waiting for notebook to stop..."
+                    aws sagemaker wait notebook-instance-stopped \
+                        --notebook-instance-name "$NOTEBOOK_NAME" \
+                        --region "$SAGEMAKER_REGION" 2>&1 || true
+                fi
+            fi
+
+            # Delete
+            echo "  Deleting notebook instance..."
+            if aws sagemaker delete-notebook-instance \
+                --notebook-instance-name "$NOTEBOOK_NAME" \
+                --region "$SAGEMAKER_REGION" 2>&1; then
+                echo -e "${GREEN}  ✓ Notebook Instance deleted: $NOTEBOOK_NAME${NC}"
+                SAGEMAKER_NOTEBOOK_DELETED=$((SAGEMAKER_NOTEBOOK_DELETED + 1))
+            else
+                echo -e "${RED}  ✗ Failed to delete notebook: $NOTEBOOK_NAME${NC}"
+            fi
+        done < <(echo "$NOTEBOOK_INSTANCES" | jq -c '.[]')
+    fi
+else
+    echo -e "${GREEN}  No Notebook Instances found.${NC}"
+fi
+echo ""
+
+# --- Training Jobs (Stop only - cannot delete) ---
+echo -e "${YELLOW}Checking SageMaker Training Jobs...${NC}"
+TRAINING_JOBS=$(aws sagemaker list-training-jobs \
+    --region "$SAGEMAKER_REGION" \
+    --status-equals "InProgress" \
+    --query 'TrainingJobSummaries[].{Name:TrainingJobName,Status:TrainingJobStatus}' \
+    --output json 2>/dev/null) || TRAINING_JOBS="[]"
+
+TRAINING_COUNT=$(echo "$TRAINING_JOBS" | jq 'length')
+if [ "$TRAINING_COUNT" -gt 0 ]; then
+    echo -e "${RED}  Found $TRAINING_COUNT In-Progress Training Job(s):${NC}"
+    echo "$TRAINING_JOBS" | jq -r '.[] | "    - \(.Name) (Status: \(.Status))"'
+    echo ""
+    echo -e "${YELLOW}  Note: Training Jobs cannot be deleted, only stopped.${NC}"
+
+    PROCEED_TRAINING=true
+    if [ "$SKIP_PROMPT" = false ]; then
+        read -p "$(echo -e ${RED}Do you want to stop all In-Progress Training Jobs? [y/N]: ${NC})" -n 1 -r
+        echo ""
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            echo -e "${YELLOW}Training Job stop skipped by user.${NC}"
+            PROCEED_TRAINING=false
+        fi
+    fi
+
+    if [ "$PROCEED_TRAINING" = true ]; then
+        while read -r job; do
+            JOB_NAME=$(echo "$job" | jq -r '.Name')
+            echo -e "${YELLOW}Stopping Training Job: $JOB_NAME${NC}"
+
+            if aws sagemaker stop-training-job \
+                --training-job-name "$JOB_NAME" \
+                --region "$SAGEMAKER_REGION" 2>&1; then
+                echo -e "${GREEN}  ✓ Training Job stopped: $JOB_NAME${NC}"
+                SAGEMAKER_TRAINING_STOPPED=$((SAGEMAKER_TRAINING_STOPPED + 1))
+            else
+                echo -e "${RED}  ✗ Failed to stop training job: $JOB_NAME${NC}"
+            fi
+        done < <(echo "$TRAINING_JOBS" | jq -c '.[]')
+    fi
+else
+    echo -e "${GREEN}  No In-Progress Training Jobs found.${NC}"
+fi
+echo ""
+
+echo -e "${YELLOW}=== SageMaker Cleanup Summary ===${NC}"
+echo -e "${GREEN}Endpoints Deleted:          $SAGEMAKER_ENDPOINT_DELETED${NC}"
+echo -e "${GREEN}Endpoint Configs Deleted:   $SAGEMAKER_ENDPOINT_CONFIG_DELETED${NC}"
+echo -e "${GREEN}Models Deleted:             $SAGEMAKER_MODEL_DELETED${NC}"
+echo -e "${GREEN}Notebook Instances Deleted: $SAGEMAKER_NOTEBOOK_DELETED${NC}"
+echo -e "${GREEN}Training Jobs Stopped:      $SAGEMAKER_TRAINING_STOPPED${NC}"
 echo ""
 
 #############################################
@@ -881,14 +1078,19 @@ echo -e "${YELLOW}========================================${NC}"
 echo -e "${YELLOW}Final Cleanup Summary${NC}"
 echo -e "${YELLOW}========================================${NC}"
 echo ""
-echo -e "${GREEN}CloudFormation Stacks Deleted: $STACK_SUCCESS_COUNT${NC}"
-echo -e "${GREEN}AgentCore Runtimes Deleted:    $AGENT_SUCCESS_COUNT${NC}"
-echo -e "${GREEN}AgentCore Memories Deleted:    $MEMORY_SUCCESS_COUNT${NC}"
-echo -e "${GREEN}IAM User 'APIuser' Deleted:    $IAM_USER_DELETED${NC}"
-echo -e "${GREEN}S3 Bucket Deleted:             $S3_BUCKET_DELETED${NC}"
+echo -e "${GREEN}CloudFormation Stacks Deleted:          $STACK_SUCCESS_COUNT${NC}"
+echo -e "${GREEN}AgentCore Runtimes Deleted:             $AGENT_SUCCESS_COUNT${NC}"
+echo -e "${GREEN}AgentCore Memories Deleted:             $MEMORY_SUCCESS_COUNT${NC}"
+echo -e "${GREEN}IAM User 'APIuser' Deleted:             $IAM_USER_DELETED${NC}"
+echo -e "${GREEN}S3 Bucket Deleted:                      $S3_BUCKET_DELETED${NC}"
 echo -e "${GREEN}CW Log Groups Deleted (ap-northeast-2): $CW_DELETED_AP_NORTHEAST_2${NC}"
 echo -e "${GREEN}CW Log Groups Deleted (us-west-2):      $CW_DELETED_US_WEST_2${NC}"
-echo -e "${GREEN}CDK ECR Images Deleted:        $ECR_IMAGES_DELETED${NC}"
+echo -e "${GREEN}CDK ECR Images Deleted:                 $ECR_IMAGES_DELETED${NC}"
+echo -e "${GREEN}SageMaker Endpoints Deleted:            $SAGEMAKER_ENDPOINT_DELETED${NC}"
+echo -e "${GREEN}SageMaker Endpoint Configs Deleted:     $SAGEMAKER_ENDPOINT_CONFIG_DELETED${NC}"
+echo -e "${GREEN}SageMaker Models Deleted:               $SAGEMAKER_MODEL_DELETED${NC}"
+echo -e "${GREEN}SageMaker Notebook Instances Deleted:   $SAGEMAKER_NOTEBOOK_DELETED${NC}"
+echo -e "${GREEN}SageMaker Training Jobs Stopped:        $SAGEMAKER_TRAINING_STOPPED${NC}"
 echo ""
 
 # Determine exit code
