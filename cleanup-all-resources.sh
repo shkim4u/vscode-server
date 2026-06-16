@@ -896,7 +896,7 @@ if [ "$CONFIG_COUNT" -gt 0 ]; then
     fi
 
     if [ "$PROCEED_CONFIGS" = true ]; then
-        echo "$ENDPOINT_CONFIGS" | jq -r '.[]' | while read -r config_name; do
+        while read -r config_name; do
             [ -z "$config_name" ] && continue
             echo -e "${YELLOW}Deleting Endpoint Config: $config_name${NC}"
 
@@ -908,7 +908,7 @@ if [ "$CONFIG_COUNT" -gt 0 ]; then
             else
                 echo -e "${RED}  ✗ Failed to delete config: $config_name${NC}"
             fi
-        done
+        done < <(echo "$ENDPOINT_CONFIGS" | jq -r '.[]')
     fi
 else
     echo -e "${GREEN}  No Endpoint Configurations found.${NC}"
@@ -937,7 +937,7 @@ if [ "$MODEL_COUNT" -gt 0 ]; then
     fi
 
     if [ "$PROCEED_MODELS" = true ]; then
-        echo "$MODELS" | jq -r '.[]' | while read -r model_name; do
+        while read -r model_name; do
             [ -z "$model_name" ] && continue
             echo -e "${YELLOW}Deleting Model: $model_name${NC}"
 
@@ -949,7 +949,7 @@ if [ "$MODEL_COUNT" -gt 0 ]; then
             else
                 echo -e "${RED}  ✗ Failed to delete model: $model_name${NC}"
             fi
-        done
+        done < <(echo "$MODELS" | jq -r '.[]')
     fi
 else
     echo -e "${GREEN}  No Models found.${NC}"
