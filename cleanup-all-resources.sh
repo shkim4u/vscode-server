@@ -12,7 +12,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # Default configuration
-DEFAULT_STACKS="AxOnMasteryStack,VSCodeServerStack"
+DEFAULT_STACKS="AxOnMasteryStack,VSCodeServerStack,FineTuningEC2ResourcesStack"
 DEFAULT_STACK_REGION="ap-northeast-2"
 DEFAULT_AGENTCORE_REGION="us-west-2"
 DEFAULT_NO_WAIT_STACK_DELETION=true
