@@ -39,9 +39,8 @@ export PYENV_ROOT="$HOME/.pyenv"
 [[ -d $PYENV_ROOT/bin ]] && export PATH="$PYENV_ROOT/bin:$PATH"
 
 # pyenv 초기화
-eval "$(pyenv init - bash)"
 eval "$(pyenv init --path)"
-eval "$(pyenv init -)"
+eval "$(pyenv init - bash)"
 eval "$(pyenv virtualenv-init -)"
 
 # 프롬프트 설정
